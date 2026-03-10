@@ -20,7 +20,11 @@ import { apiGet, apiPost } from './api';
 function normalizeWorkflows(rules: WorkflowRule[]): WorkflowRule[] {
   if (!Array.isArray(rules)) return [];
   return rules.map((w) => {
-    const chain = Array.isArray(w.approvalChain) ? w.approvalChain : [];
+    let rawChain = w.approvalChain;
+    if (typeof rawChain === 'string') {
+      try { rawChain = JSON.parse(rawChain); } catch { rawChain = []; }
+    }
+    const chain = Array.isArray(rawChain) ? rawChain : [];
     const len = chain.length;
     const approvalChain = chain.map((step: any, idx: number) => {
       const userIds = Array.isArray(step.userIds) ? step.userIds : (Array.isArray(step.user_ids) ? step.user_ids : []);

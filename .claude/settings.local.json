@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(find \"/c/Users/jagan.subudhi/OneDrive - Indira IVF/Desktop/P2P-Indira\" -type f \\\\\\( -name \"*.sql\" -o -name \"*schema*\" -o -name \"*migration*\" -o -name \"*init*\" \\\\\\) 2>/dev/null | head -20)"
+      "Bash(find \"/c/Users/jagan.subudhi/OneDrive - Indira IVF/Desktop/P2P-Indira\" -type f \\\\\\( -name \"*.sql\" -o -name \"*schema*\" -o -name \"*migration*\" -o -name \"*init*\" \\\\\\) 2>/dev/null | head -20)",
+      "Bash(grep -rn \"workflow\\\\|moduleType\" \"C:\\\\Users\\\\jagan.subudhi\\\\OneDrive - Indira IVF\\\\Desktop\\\\P2P-Indira\\\\backend\\\\src\" --include=\"*.js\" 2>/dev/null | head -40)"
     ]
   }
 }

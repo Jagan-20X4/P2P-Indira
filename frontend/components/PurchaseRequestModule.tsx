@@ -184,7 +184,11 @@ const PurchaseRequestModule: React.FC<PurchaseRequestModuleProps> = ({
       (w.maxAmount === null || pr.amount <= w.maxAmount)
     );
 
-    if (!rule || rule.approvalChain.length === 0) return true; 
+    if (!rule) {
+      const anyRuleForModule = workflows.some(w => w.moduleType === ModuleType.PR);
+      return !anyRuleForModule;
+    }
+    if (rule.approvalChain.length === 0) return true;
 
     const currentStep = rule.approvalChain[pr.currentStepIndex];
     if (!currentStep) return false;
@@ -246,7 +250,7 @@ const PurchaseRequestModule: React.FC<PurchaseRequestModuleProps> = ({
   };
 
   const amendPR = (id: string) => {
-    setPurchaseRequests(purchaseRequests.map(pr => pr.id === id ? { ...pr, status: 'Pending' } : pr));
+    setPurchaseRequests(purchaseRequests.map(pr => pr.id === id ? { ...pr, status: 'Pending', currentStepIndex: 0 } : pr));
     alert('PR status reset to Pending for amendment. It will follow the approval workflow again.');
   };
 

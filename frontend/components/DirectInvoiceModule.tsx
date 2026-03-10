@@ -332,10 +332,14 @@ const DirectInvoiceModule: React.FC<DirectInvoiceModuleProps> = ({ masters, curr
       (w.maxAmount === null || doc.amount <= w.maxAmount)
     );
 
-    if (!rule) return true; 
+    if (!rule) {
+      const anyRuleForModule = workflows.some(w => w.moduleType === ModuleType.DIRECT_INVOICE);
+      return !anyRuleForModule;
+    }
+    if (rule.approvalChain.length === 0) return true;
 
     const currentStep = rule.approvalChain[doc.currentStepIndex];
-    if (!currentStep) return true;
+    if (!currentStep) return false;
 
     return currentStep.type === ApprovalType.APPROVER && currentStep.userIds.includes(currentUser.id);
   };

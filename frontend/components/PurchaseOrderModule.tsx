@@ -460,7 +460,13 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
       (w.maxAmount === null || doc.amount <= w.maxAmount)
     );
 
-    if (!rule || rule.approvalChain.length === 0) return true; 
+    if (!rule) {
+      // Only auto-approve if NO workflow rules exist at all for this module type
+      // If rules exist but none match this document, block approval (prevents silent bypass)
+      const anyRuleForModule = workflows.some(w => w.moduleType === moduleType);
+      return !anyRuleForModule;
+    }
+    if (rule.approvalChain.length === 0) return true;
 
     const currentStep = rule.approvalChain[doc.currentStepIndex];
     if (!currentStep) return false;
@@ -586,7 +592,7 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
     if (po && po.status === 'Approved') {
       creditBudget(po);
     }
-    setPurchaseOrders(purchaseOrders.map(po => po.id === id ? { ...po, status: 'Pending' } : po));
+    setPurchaseOrders(purchaseOrders.map(po => po.id === id ? { ...po, status: 'Pending', currentStepIndex: 0 } : po));
     alert('PO status reset to Pending for amendment. Budget has been credited back and will be re-validated upon re-approval.');
   };
 

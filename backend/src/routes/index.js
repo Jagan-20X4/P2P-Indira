@@ -7,10 +7,33 @@ router.get('/health', (req, res) => {
   res.json({ ok: true, message: 'API is up' });
 });
 
-// Generic handler: GET all from table, return camelCase rows
+// JSON columns that may be stored as TEXT/JSON (not JSONB) and need parsing after retrieval
+const JSON_COLUMNS = {
+  workflows: ['approvalChain'],
+  roles: ['permissions'],
+  users: ['centerNames', 'departments', 'subDepartments', 'entityNames', 'roleIds'],
+  purchase_requests: ['centerNames', 'items', 'attachments'],
+  rate_contracts: ['items', 'attachments'],
+  purchase_orders: ['centerNames', 'items', 'attachments'],
+  grns: ['items', 'attachments'],
+  invoices: ['items', 'attachments'],
+};
+
+// Generic handler: GET all from table, return camelCase rows with parsed JSON columns
 async function getAll(table) {
   const res = await query(`SELECT * FROM ${table}`);
-  return rowsToCamel(res.rows);
+  const rows = rowsToCamel(res.rows);
+  const jsonCols = JSON_COLUMNS[table] || [];
+  if (jsonCols.length === 0) return rows;
+  return rows.map(row => {
+    const out = { ...row };
+    for (const col of jsonCols) {
+      if (typeof out[col] === 'string') {
+        try { out[col] = JSON.parse(out[col]); } catch {}
+      }
+    }
+    return out;
+  });
 }
 
 // Build upsert for tables with many columns - use raw column list and JSON for jsonb

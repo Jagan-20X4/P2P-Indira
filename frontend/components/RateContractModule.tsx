@@ -295,10 +295,14 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
       (w.maxAmount === null || doc.amount <= w.maxAmount)
     );
 
-    if (!rule) return true; 
+    if (!rule) {
+      const anyRuleForModule = workflows.some(w => w.moduleType === moduleType);
+      return !anyRuleForModule;
+    }
+    if (rule.approvalChain.length === 0) return true;
 
     const currentStep = rule.approvalChain[doc.currentStepIndex];
-    if (!currentStep) return true;
+    if (!currentStep) return false;
 
     return currentStep.type === ApprovalType.APPROVER && currentStep.userIds.includes(currentUser.id);
   };
@@ -385,11 +389,11 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
     }
 
     if (type === 'RC') {
-      setRateContracts(prev => prev.map(rc => rc.id === id ? { ...rc, status: 'Rejected', rejectionRemarks } : rc));
+      setRateContracts(prev => prev.map(rc => rc.id === id ? { ...rc, status: 'Rejected', rejectionRemarks, currentStepIndex: 0 } : rc));
     } else if (type === 'GRN') {
-      setGrns(prev => prev.map(grn => grn.id === id ? { ...grn, status: 'Rejected', rejectionRemarks } : grn));
+      setGrns(prev => prev.map(grn => grn.id === id ? { ...grn, status: 'Rejected', rejectionRemarks, currentStepIndex: 0 } : grn));
     } else if (type === 'Invoice') {
-      setInvoices(prev => prev.map(inv => inv.id === id ? { ...inv, status: 'Rejected', rejectionRemarks } : inv));
+      setInvoices(prev => prev.map(inv => inv.id === id ? { ...inv, status: 'Rejected', rejectionRemarks, currentStepIndex: 0 } : inv));
     }
 
     setRejectionRemarks('');
@@ -419,7 +423,7 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
   };
 
   const amendRC = (id: string) => {
-    setRateContracts(rateContracts.map(rc => rc.id === id ? { ...rc, status: 'Pending' } : rc));
+    setRateContracts(rateContracts.map(rc => rc.id === id ? { ...rc, status: 'Pending', currentStepIndex: 0 } : rc));
     alert('RC status reset to Pending for amendment. It will follow the approval workflow again.');
   };
 

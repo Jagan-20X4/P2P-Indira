@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find \"/c/Users/jagan.subudhi/OneDrive - Indira IVF/Desktop/P2P-Indira\" -type f \\\\\\( -name \"*.sql\" -o -name \"*schema*\" -o -name \"*migration*\" -o -name \"*init*\" \\\\\\) 2>/dev/null | head -20)"
+    ]
+  }
+}

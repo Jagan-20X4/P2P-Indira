@@ -1,0 +1,1586 @@
+
+import React, { useState, useEffect } from 'react';
+import Papa from 'papaparse';
+import { 
+  RateContract, GRN, Invoice, MasterRecord, MasterType, 
+  Frequency, TransactionType, Attachment, ItemLine,
+  User, WorkflowRule, ModuleType, ApprovalType
+} from '../types';
+import { DEPARTMENTS, DEPT_SUBDEPT_MAP, CENTERS } from '../constants';
+import MultiSelect from './MultiSelect';
+
+interface RateContractModuleProps {
+  masters: Record<MasterType, MasterRecord[]>;
+  rateContracts: RateContract[];
+  setRateContracts: React.Dispatch<React.SetStateAction<RateContract[]>>;
+  grns: GRN[];
+  setGrns: React.Dispatch<React.SetStateAction<GRN[]>>;
+  invoices: Invoice[];
+  setInvoices: React.Dispatch<React.SetStateAction<Invoice[]>>;
+  currentUser: User;
+  workflows: WorkflowRule[];
+}
+
+type ViewMode = 'RC' | 'GRN' | 'Invoice';
+
+const RateContractModule: React.FC<RateContractModuleProps> = ({ 
+  masters, rateContracts, setRateContracts, grns, setGrns, invoices, setInvoices, currentUser, workflows
+}) => {
+  const [viewMode, setViewMode] = useState<ViewMode>('RC');
+  
+  const [showForm, setShowForm] = useState(false);
+  const [selectedRC, setSelectedRC] = useState<RateContract | null>(null);
+  const [selectedGRN, setSelectedGRN] = useState<GRN | null>(null);
+
+  // Form states
+  const [rcForm, setRcForm] = useState<Partial<RateContract>>({
+    entityName: masters.Entity?.[0]?.name || '',
+    vendorId: '',
+    vendorSiteId: '',
+    transactionType: 'Material',
+    validFrom: '',
+    validTo: '',
+    frequency: 'Monthly',
+    department: '',
+    subDepartment: '',
+    paymentTerms: '',
+    items: [{ id: Math.random().toString(), itemName: '', quantity: 1, rate: 0, amount: 0, centerName: '', remarks: '' }],
+    amount: 0,
+    remarks: '',
+    attachments: [],
+    shippingAddressId: '',
+    billingAddressId: ''
+  });
+
+  const [grnForm, setGrnForm] = useState<Partial<GRN>>({
+    entityName: masters.Entity?.[0]?.name || '',
+    vendorSiteId: '',
+    location: '',
+    items: [],
+    amount: 0,
+    remarks: '',
+    attachments: [],
+    shippingAddressId: '',
+    billingAddressId: ''
+  });
+
+  const [invoiceForm, setInvoiceForm] = useState<Partial<Invoice>>({
+    entityName: masters.Entity?.[0]?.name || '',
+    vendorSiteId: '',
+    location: '',
+    attachments: [],
+    shippingAddressId: '',
+    billingAddressId: ''
+  });
+
+  const [bulkUploadType, setBulkUploadType] = useState<'RC' | 'GRN' | 'Invoice' | null>(null);
+
+  // Update total amount whenever items change
+  useEffect(() => {
+    const total = (rcForm.items || []).reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+    setRcForm(prev => ({ ...prev, amount: total }));
+  }, [rcForm.items]);
+
+  const downloadTemplate = (type: 'RC' | 'GRN' | 'Invoice') => {
+    let headers = '';
+    if (type === 'RC') headers = 'Item Name,Center,Rate,Remarks';
+    else headers = 'Item Name,Qty,Rate,Remarks';
+
+    const blob = new Blob([headers], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.setAttribute('hidden', '');
+    a.setAttribute('href', url);
+    a.setAttribute('download', `${type}_Template.csv`);
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  const addItem = () => {
+    setRcForm(prev => ({
+      ...prev,
+      items: [...(prev.items || []), { id: Math.random().toString(), itemName: '', quantity: 1, rate: 0, amount: 0, centerName: '', remarks: '' }]
+    }));
+  };
+
+  const removeItem = (id: string) => {
+    setRcForm(prev => ({
+      ...prev,
+      items: (prev.items || []).filter(i => i.id !== id)
+    }));
+  };
+
+  const updateItem = (id: string, field: keyof ItemLine, value: any) => {
+    setRcForm(prev => {
+      return {
+        ...prev,
+        items: (prev.items || []).map(item => {
+          if (item.id === id) {
+            const updated = { ...item, [field]: value };
+            if (field === 'quantity' || field === 'rate') {
+              const qty = updated.quantity || 0;
+              const rate = updated.rate || 0;
+              updated.amount = qty * rate;
+            }
+            return updated;
+          }
+          return item;
+        })
+      };
+    });
+  };
+
+  const handleBulkUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'RC' | 'GRN' | 'Invoice') => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        const data = results.data as any[];
+        const newItems: ItemLine[] = data.map((row: any) => {
+          const itemName = row['Item Name'] || row['itemName'] || '';
+          const qty = type === 'RC' ? 1 : parseFloat(row['Qty'] || row['quantity'] || '0');
+          const rate = parseFloat(row['Rate'] || row['rate'] || '0');
+          const centerName = row['Center'] || row['centerName'] || '';
+          
+          const base = qty * rate;
+
+          return {
+            id: Math.random().toString(),
+            itemName,
+            quantity: qty,
+            rate,
+            amount: base,
+            centerName,
+            remarks: row['Remarks'] || row['remarks'] || ''
+          };
+        });
+
+        if (type === 'RC') {
+          setRcForm(prev => ({ ...prev, items: newItems }));
+        } else if (type === 'GRN' && selectedRC) {
+          setGrnForm(prev => ({ 
+            ...prev, 
+            items: newItems, 
+            amount: newItems.reduce((sum, i) => sum + (i.totalAmount || 0), 0) 
+          }));
+        } else if (type === 'Invoice' && selectedGRN) {
+          setInvoiceForm(prev => ({ ...prev, items: newItems }));
+        }
+        
+        alert(`Bulk upload for ${type} processed: ${newItems.length} items found.`);
+      },
+      error: (error) => {
+        alert(`Error parsing CSV: ${error.message}`);
+      }
+    });
+
+    e.target.value = '';
+  };
+
+  const handleCreateRC = () => {
+    // Validation
+    if (!rcForm.vendorId || !rcForm.department || !rcForm.subDepartment) {
+      alert('Please fill all mandatory header fields.');
+      return;
+    }
+    if ((rcForm.items || []).some(i => !i.itemName || !i.remarks || !i.centerName)) {
+      alert('Item Name, Center, and Remarks are mandatory for all item lines.');
+      return;
+    }
+
+    const newRC: RateContract = {
+      ...rcForm as RateContract,
+      id: `RC-${Math.floor(Math.random() * 10000)}`,
+      status: 'Pending',
+      currentStepIndex: 0,
+      createdAt: new Date().toISOString(),
+      attachments: rcForm.attachments || []
+    };
+    setRateContracts([...rateContracts, newRC]);
+    setShowForm(false);
+    resetForms();
+  };
+
+  const handleCreateGRN = () => {
+    if (!selectedRC) return;
+    const newGRN: GRN = {
+      ...grnForm as GRN,
+      id: `GRN-${Math.floor(Math.random() * 10000)}`,
+      entityName: selectedRC.entityName,
+      rateContractId: selectedRC.id,
+      status: 'Pending',
+      currentStepIndex: 0,
+      createdAt: new Date().toISOString(),
+      attachments: grnForm.attachments || []
+    };
+    setGrns([...grns, newGRN]);
+    setShowForm(false);
+    resetForms();
+  };
+
+  const handleCreateInvoice = () => {
+    if (!selectedGRN) return;
+    const newInvoice: Invoice = {
+      ...invoiceForm as Invoice,
+      id: `INV-${Math.floor(Math.random() * 10000)}`,
+      entityName: selectedGRN.entityName,
+      grnId: selectedGRN.id,
+      status: 'Pending',
+      currentStepIndex: 0,
+      createdAt: new Date().toISOString(),
+      attachments: invoiceForm.attachments || []
+    };
+    setInvoices([...invoices, newInvoice]);
+    setShowForm(false);
+    resetForms();
+  };
+
+  const resetForms = () => {
+    setRcForm({
+      entityName: masters.Entity?.[0]?.name || '',
+      vendorId: '', vendorSiteId: '', transactionType: 'Material', validFrom: '', validTo: '',
+      frequency: 'Monthly', department: '', subDepartment: '', paymentTerms: '',
+      items: [{ id: Math.random().toString(), itemName: '', quantity: 1, rate: 0, amount: 0, centerName: '', remarks: '' }],
+      amount: 0, remarks: '', attachments: [],
+      shippingAddressId: '', billingAddressId: ''
+    });
+    setGrnForm({ vendorSiteId: '', location: '', items: [], amount: 0, remarks: '', attachments: [], shippingAddressId: '', billingAddressId: '' });
+    setInvoiceForm({ vendorSiteId: '', location: '', attachments: [], shippingAddressId: '', billingAddressId: '' });
+    setSelectedRC(null);
+    setSelectedGRN(null);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, source: Attachment['source']) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const newAttachment: Attachment = {
+      id: `att-${Math.random()}`,
+      name: file.name,
+      url: URL.createObjectURL(file),
+      uploadedAt: new Date().toISOString(),
+      source
+    };
+
+    if (source === 'RC') setRcForm(prev => ({ ...prev, attachments: [...(prev.attachments || []), newAttachment] }));
+    if (source === 'GRN') setGrnForm(prev => ({ ...prev, attachments: [...(prev.attachments || []), newAttachment] }));
+    if (source === 'Invoice') setInvoiceForm(prev => ({ ...prev, attachments: [...(prev.attachments || []), newAttachment] }));
+    
+    // Reset input
+    e.target.value = '';
+  };
+
+  const canApprove = (doc: RateContract | GRN | Invoice) => {
+    if (doc.status !== 'Pending') return false;
+    
+    let moduleType: ModuleType;
+    if ('grnId' in doc) {
+      moduleType = ModuleType.INVOICE_GRN;
+    } else if ('rateContractId' in doc) {
+      moduleType = ModuleType.GRN;
+    } else {
+      moduleType = ModuleType.RATE_CONTRACT;
+    }
+
+    const rule = workflows.find(w => 
+      w.entityName === doc.entityName &&
+      w.moduleType === moduleType &&
+      w.subDepartment === doc.subDepartment &&
+      (!w.centerName || (doc as any).items?.some((i: any) => i.centerName === w.centerName) || (doc as any).location === w.centerName) &&
+      doc.amount >= w.minAmount && 
+      (w.maxAmount === null || doc.amount <= w.maxAmount)
+    );
+
+    if (!rule) return true; 
+
+    const currentStep = rule.approvalChain[doc.currentStepIndex];
+    if (!currentStep) return true;
+
+    return currentStep.type === ApprovalType.APPROVER && currentStep.userIds.includes(currentUser.id);
+  };
+
+  const canCompleteReview = (doc: RateContract | GRN | Invoice) => {
+    if (doc.status !== 'Pending') return false;
+    let moduleType: ModuleType;
+    if ('grnId' in doc) {
+      moduleType = ModuleType.INVOICE_GRN;
+    } else if ('rateContractId' in doc) {
+      moduleType = ModuleType.GRN;
+    } else {
+      moduleType = ModuleType.RATE_CONTRACT;
+    }
+    const rule = workflows.find(w =>
+      w.entityName === doc.entityName &&
+      w.moduleType === moduleType &&
+      w.subDepartment === doc.subDepartment &&
+      (!w.centerName || (doc as any).items?.some((i: any) => i.centerName === w.centerName) || (doc as any).location === w.centerName) &&
+      doc.amount >= w.minAmount &&
+      (w.maxAmount === null || doc.amount <= w.maxAmount)
+    );
+    if (!rule) return false;
+    const currentStep = rule.approvalChain[doc.currentStepIndex];
+    if (!currentStep) return false;
+    return currentStep.type === ApprovalType.REVIEWER && currentStep.userIds.includes(currentUser.id);
+  };
+
+  const completeReviewRC = (id: string) => {
+    setRateContracts(rateContracts.map(rc => {
+      if (rc.id !== id) return rc;
+      const rule = workflows.find(w =>
+        w.entityName === rc.entityName &&
+        w.moduleType === ModuleType.RATE_CONTRACT &&
+        w.subDepartment === rc.subDepartment &&
+        (!w.centerName || rc.items.some(i => i.centerName === w.centerName)) &&
+        rc.amount >= w.minAmount &&
+        (w.maxAmount === null || rc.amount <= w.maxAmount)
+      );
+      if (!rule || rc.currentStepIndex >= rule.approvalChain.length - 1) return rc;
+      return { ...rc, currentStepIndex: rc.currentStepIndex + 1 };
+    }));
+  };
+
+  const completeReviewGRN = (id: string) => {
+    setGrns(grns.map(grn => {
+      if (grn.id !== id) return grn;
+      const rule = workflows.find(w =>
+        w.entityName === grn.entityName &&
+        w.moduleType === ModuleType.GRN &&
+        w.subDepartment === grn.subDepartment &&
+        (!w.centerName || grn.location === w.centerName) &&
+        grn.amount >= w.minAmount &&
+        (w.maxAmount === null || grn.amount <= w.maxAmount)
+      );
+      if (!rule || grn.currentStepIndex >= rule.approvalChain.length - 1) return grn;
+      return { ...grn, currentStepIndex: grn.currentStepIndex + 1 };
+    }));
+  };
+
+  const completeReviewInvoice = (id: string) => {
+    setInvoices(invoices.map(inv => {
+      if (inv.id !== id) return inv;
+      const rule = workflows.find(w =>
+        w.entityName === inv.entityName &&
+        w.moduleType === ModuleType.INVOICE_GRN &&
+        w.subDepartment === inv.subDepartment &&
+        (!w.centerName || inv.location === w.centerName) &&
+        inv.amount >= w.minAmount &&
+        (w.maxAmount === null || inv.amount <= w.maxAmount)
+      );
+      if (!rule || inv.currentStepIndex >= rule.approvalChain.length - 1) return inv;
+      return { ...inv, currentStepIndex: inv.currentStepIndex + 1 };
+    }));
+  };
+
+  const [rejectionRemarks, setRejectionRemarks] = useState('');
+  const [showRejectionModal, setShowRejectionModal] = useState<{ id: string, type: 'RC' | 'GRN' | 'Invoice' } | null>(null);
+
+  const handleReject = (id: string, type: 'RC' | 'GRN' | 'Invoice') => {
+    if (!rejectionRemarks) {
+      alert('Please provide rejection remarks.');
+      return;
+    }
+
+    if (type === 'RC') {
+      setRateContracts(prev => prev.map(rc => rc.id === id ? { ...rc, status: 'Rejected', rejectionRemarks } : rc));
+    } else if (type === 'GRN') {
+      setGrns(prev => prev.map(grn => grn.id === id ? { ...grn, status: 'Rejected', rejectionRemarks } : grn));
+    } else if (type === 'Invoice') {
+      setInvoices(prev => prev.map(inv => inv.id === id ? { ...inv, status: 'Rejected', rejectionRemarks } : inv));
+    }
+
+    setRejectionRemarks('');
+    setShowRejectionModal(null);
+    setShowForm(false);
+  };
+
+  const approveRC = (id: string) => {
+    setRateContracts(rateContracts.map(rc => {
+      if (rc.id !== id) return rc;
+
+      const rule = workflows.find(w => 
+        w.entityName === rc.entityName &&
+        w.moduleType === ModuleType.RATE_CONTRACT &&
+        w.subDepartment === rc.subDepartment &&
+        (!w.centerName || rc.items.some(i => i.centerName === w.centerName)) &&
+        rc.amount >= w.minAmount && 
+        (w.maxAmount === null || rc.amount <= w.maxAmount)
+      );
+
+      if (!rule || rc.currentStepIndex >= rule.approvalChain.length - 1) {
+        return { ...rc, status: 'Approved' };
+      }
+
+      return { ...rc, currentStepIndex: rc.currentStepIndex + 1 };
+    }));
+  };
+
+  const amendRC = (id: string) => {
+    setRateContracts(rateContracts.map(rc => rc.id === id ? { ...rc, status: 'Pending' } : rc));
+    alert('RC status reset to Pending for amendment. It will follow the approval workflow again.');
+  };
+
+  const approveGRN = (id: string) => {
+    setGrns(grns.map(grn => {
+      if (grn.id !== id) return grn;
+
+      const rule = workflows.find(w => 
+        w.entityName === grn.entityName &&
+        w.moduleType === ModuleType.GRN &&
+        w.subDepartment === grn.subDepartment &&
+        (!w.centerName || grn.location === w.centerName) &&
+        grn.amount >= w.minAmount && 
+        (w.maxAmount === null || grn.amount <= w.maxAmount)
+      );
+
+      if (!rule || grn.currentStepIndex >= rule.approvalChain.length - 1) {
+        return { ...grn, status: 'Approved' };
+      }
+
+      return { ...grn, currentStepIndex: grn.currentStepIndex + 1 };
+    }));
+  };
+
+  const reverseGRN = (id: string) => {
+    setGrns(grns.map(grn => grn.id === id ? { ...grn, status: 'Reversed' } : grn));
+    alert('GRN reversed. You can now recreate it against the same RC.');
+  };
+
+  const approveInvoice = (id: string) => {
+    setInvoices(invoices.map(inv => {
+      if (inv.id !== id) return inv;
+
+      const rule = workflows.find(w => 
+        w.entityName === inv.entityName &&
+        w.moduleType === ModuleType.INVOICE_GRN &&
+        w.subDepartment === inv.subDepartment &&
+        (!w.centerName || inv.location === w.centerName) &&
+        inv.amount >= w.minAmount && 
+        (w.maxAmount === null || inv.amount <= w.maxAmount)
+      );
+
+      if (!rule || inv.currentStepIndex >= rule.approvalChain.length - 1) {
+        return { ...inv, status: 'Approved' };
+      }
+
+      return { ...inv, currentStepIndex: inv.currentStepIndex + 1 };
+    }));
+  };
+
+  const reverseInvoice = (id: string) => {
+    setInvoices(invoices.map(inv => inv.id === id ? { ...inv, status: 'Reversed' } : inv));
+    alert('Invoice reversed. You can now recreate it against the same GRN.');
+  };
+
+  const isRcReadOnly = !!rcForm.id && !(rcForm.status === 'Rejected' && rcForm.createdBy === currentUser.id);
+  const isGrnReadOnly = !!grnForm.id && !(grnForm.status === 'Rejected' && grnForm.createdBy === currentUser.id);
+  const isInvoiceReadOnly = !!invoiceForm.id && !(invoiceForm.status === 'Rejected' && invoiceForm.createdBy === currentUser.id);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex space-x-4 border-b border-slate-200 pb-4">
+        {(['RC', 'GRN', 'Invoice'] as ViewMode[]).map(mode => (
+          <button
+            key={mode}
+            onClick={() => { setViewMode(mode); setShowForm(false); }}
+            className={`px-4 py-2 rounded-lg font-bold transition-all ${
+              viewMode === mode ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-100'
+            }`}
+          >
+            {mode === 'RC' ? 'Rate Contracts' : mode === 'GRN' ? 'GRN' : 'Invoices'}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex justify-between items-center">
+        <h2 className="text-xl font-black text-slate-800">
+          {viewMode === 'RC' ? 'Rate Contract Management' : viewMode === 'GRN' ? 'Goods Receipt Notes' : 'Invoice Processing'}
+        </h2>
+        {viewMode === 'RC' && !showForm && (
+          <button 
+            onClick={() => setShowForm(true)}
+            className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-black shadow-lg shadow-indigo-200 hover:scale-105 transition-transform"
+          >
+            + Create New RC
+          </button>
+        )}
+      </div>
+
+      {showForm ? (
+        <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-100 animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-lg font-black text-slate-900">
+              {rcForm.id ? 'Rate Contract Details' : 
+               grnForm.id ? 'GRN Details' : 
+               invoiceForm.id ? 'Invoice Details' : 
+               selectedRC ? (selectedGRN ? 'New Invoice' : 'New GRN') : 
+               'New Rate Contract'}
+            </h3>
+            <button onClick={() => { setShowForm(false); resetForms(); }} className="text-slate-400 hover:text-slate-600">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* RC Form Fields */}
+            {!selectedRC && (
+              <>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Entity</label>
+                  <select 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                    value={rcForm.entityName}
+                    onChange={e => setRcForm({ ...rcForm, entityName: e.target.value })}
+                    disabled={isRcReadOnly}
+                  >
+                    {(masters['Entity'] || []).map(e => <option key={e.id} value={e.name}>{e.name}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Vendor</label>
+                  <select 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                    value={rcForm.vendorId}
+                    onChange={e => setRcForm({ ...rcForm, vendorId: e.target.value, vendorSiteId: '' })}
+                    disabled={isRcReadOnly}
+                  >
+                    <option value="">Select Vendor</option>
+                    {(masters['Vendor'] || []).map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Vendor Site</label>
+                  <select 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                    value={rcForm.vendorSiteId}
+                    onChange={e => setRcForm({ ...rcForm, vendorSiteId: e.target.value })}
+                    disabled={isRcReadOnly || !rcForm.vendorId}
+                  >
+                    <option value="">Select Vendor Site</option>
+                    {(masters['Vendor Site'] || []).filter(s => s.vendorId === rcForm.vendorId).map(s => (
+                      <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Shipping Address</label>
+                  <select 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                    value={rcForm.shippingAddressId}
+                    onChange={e => setRcForm({ ...rcForm, shippingAddressId: e.target.value })}
+                    disabled={isRcReadOnly}
+                  >
+                    <option value="">Select Shipping Address</option>
+                    {(masters['Entity'] || []).flatMap(ent => ent.shippingAddresses || []).map((addr: any) => (
+                      <option key={addr.id} value={addr.id}>{addr.address}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Billing Address</label>
+                  <select 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                    value={rcForm.billingAddressId}
+                    onChange={e => setRcForm({ ...rcForm, billingAddressId: e.target.value })}
+                    disabled={isRcReadOnly}
+                  >
+                    <option value="">Select Billing Address</option>
+                    {(masters['Entity'] || []).flatMap(ent => ent.billingAddresses || []).map((addr: any) => (
+                      <option key={addr.id} value={addr.id}>{addr.address}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Transaction Type</label>
+                  <select 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                    value={rcForm.transactionType}
+                    onChange={e => setRcForm({ ...rcForm, transactionType: e.target.value as TransactionType })}
+                    disabled={isRcReadOnly}
+                  >
+                    <option value="Material">Material</option>
+                    <option value="Service">Service</option>
+                    <option value="Asset">Asset</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Validity From</label>
+                  <input 
+                    type="date" 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                    value={rcForm.validFrom}
+                    onChange={e => setRcForm({ ...rcForm, validFrom: e.target.value })}
+                    disabled={isRcReadOnly}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Validity To</label>
+                  <input 
+                    type="date" 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                    value={rcForm.validTo}
+                    onChange={e => setRcForm({ ...rcForm, validTo: e.target.value })}
+                    disabled={isRcReadOnly}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Frequency</label>
+                  <select 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                    value={rcForm.frequency}
+                    onChange={e => setRcForm({ ...rcForm, frequency: e.target.value as Frequency })}
+                  >
+                    <option value="Monthly">Monthly</option>
+                    <option value="Quarterly">Quarterly</option>
+                    <option value="Yearly">Yearly</option>
+                    <option value="One-Time">One-Time</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Department</label>
+                  <select 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                    value={rcForm.department}
+                    onChange={e => setRcForm({ ...rcForm, department: e.target.value })}
+                  >
+                    <option value="">Select Department</option>
+                    {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Sub-Department</label>
+                  <select 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                    value={rcForm.subDepartment}
+                    onChange={e => setRcForm({ ...rcForm, subDepartment: e.target.value })}
+                  >
+                    <option value="">Select Sub-Department</option>
+                    {rcForm.department && DEPT_SUBDEPT_MAP[rcForm.department]?.map(sd => <option key={sd} value={sd}>{sd}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Payment Terms</label>
+                  <select 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                    value={rcForm.paymentTerms}
+                    onChange={e => setRcForm({ ...rcForm, paymentTerms: e.target.value })}
+                  >
+                    <option value="">Select Payment Terms</option>
+                    {(masters['Payment Terms'] || []).map(pt => <option key={pt.id} value={pt.name}>{pt.name}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Terms & Conditions</label>
+                  <select 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                    value={rcForm.termsAndConditionsId}
+                    onChange={e => setRcForm({ ...rcForm, termsAndConditionsId: e.target.value })}
+                  >
+                    <option value="">Select Terms & Conditions</option>
+                    {(masters['Terms & Conditions'] || []).map(tc => <option key={tc.id} value={tc.id}>{tc.name}</option>)}
+                  </select>
+                </div>
+                
+                {/* Items Section */}
+                <div className="col-span-2 space-y-4">
+                  <div className="flex justify-between items-center">
+                    <h4 className="text-sm font-black text-slate-700 uppercase tracking-wider">Items</h4>
+                    <div className="flex items-center space-x-4">
+                      <button 
+                        onClick={() => downloadTemplate('RC')}
+                        className="text-indigo-600 text-xs font-black hover:underline flex items-center"
+                      >
+                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                        Download Template
+                      </button>
+                      <label className="cursor-pointer text-indigo-600 text-xs font-black hover:underline flex items-center">
+                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                        Bulk Upload
+                        <input type="file" className="hidden" onChange={e => handleBulkUpload(e, 'RC')} />
+                      </label>
+                      <button 
+                        onClick={addItem}
+                        className="text-indigo-600 text-xs font-black hover:underline"
+                      >
+                        + Add Item
+                      </button>
+                    </div>
+                  </div>
+                  <div className="space-y-6">
+                    {rcForm.items?.map((item, index) => (
+                      <div key={item.id} className="bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-4">
+                        <div className="grid grid-cols-12 gap-4 items-end">
+                          <div className="col-span-2 space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Item Name</label>
+                            <select 
+                              className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                              value={item.itemName}
+                              onChange={e => updateItem(item.id, 'itemName', e.target.value)}
+                            >
+                              <option value="">Select Item</option>
+                              {(masters['Item'] || []).filter(i => !rcForm.items?.some(selected => selected.id !== item.id && selected.itemName === i.name)).map(i => <option key={i.id} value={i.name}>{i.name}</option>)}
+                            </select>
+                          </div>
+                          <div className="col-span-2 space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Center <span className="text-red-500">*</span></label>
+                            <select 
+                              className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                              value={item.centerName}
+                              onChange={e => updateItem(item.id, 'centerName', e.target.value)}
+                            >
+                              <option value="">Select Center</option>
+                              {CENTERS.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                          </div>
+                          <div className="col-span-2 space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Rate (INR)</label>
+                            <input 
+                              type="number"
+                              className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                              value={item.rate}
+                              onChange={e => updateItem(item.id, 'rate', Number(e.target.value))}
+                            />
+                          </div>
+                          <div className="col-span-1 space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Qty</label>
+                            <input 
+                              type="number"
+                              className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                              value={item.quantity}
+                              onChange={e => updateItem(item.id, 'quantity', Number(e.target.value))}
+                            />
+                          </div>
+                          <div className="col-span-2 space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Base Amount</label>
+                            <input 
+                              type="number"
+                              readOnly
+                              className="w-full bg-slate-100 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-black text-slate-600"
+                              value={(Number(item.amount) || 0).toFixed(2)}
+                            />
+                          </div>
+                          <div className="col-span-2 space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Remarks <span className="text-red-500">*</span></label>
+                            <input 
+                              type="text"
+                              placeholder="Remarks"
+                              className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                              value={item.remarks}
+                              onChange={e => updateItem(item.id, 'remarks', e.target.value)}
+                            />
+                          </div>
+                          <div className="col-span-1 flex justify-center pb-1">
+                            {rcForm.items!.length > 1 && (
+                              <button onClick={() => removeItem(item.id)} className="text-red-400 hover:text-red-600 transition-colors p-2 hover:bg-red-50 rounded-xl">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Consolidated Summary Section */}
+                  <div className="bg-slate-50 p-6 rounded-3xl border border-slate-200 mt-6 space-y-4">
+                    <h4 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] border-b border-slate-200 pb-2">Amount Summary (INR)</h4>
+                    <div className="grid grid-cols-2 md:grid-cols-2 gap-6">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Base Amount</label>
+                        <div className="text-sm font-bold text-slate-700">
+                          ₹{(rcForm.items || []).reduce((sum, i) => sum + (Number(i.amount) || 0), 0).toFixed(2)}
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Net Total Amount</label>
+                        <div className="text-lg font-black text-indigo-700">
+                          ₹{(Number(rcForm.amount) || 0).toFixed(2)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2 md:col-span-2">
+                  <textarea 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                    value={rcForm.remarks}
+                    onChange={e => setRcForm({ ...rcForm, remarks: e.target.value })}
+                    disabled={isRcReadOnly}
+                  />
+                </div>
+              </>
+            )}
+
+            {/* GRN Form Fields */}
+            {selectedRC && !selectedGRN && (
+              <>
+                <div className="col-span-2 bg-indigo-50 p-4 rounded-2xl border border-indigo-100 mb-4">
+                  <p className="text-sm font-bold text-indigo-900">Auto-populated from {selectedRC.id}</p>
+                  <div className="mt-2 space-y-1">
+                    <div className="text-xs"><span className="text-indigo-400 uppercase font-black">Vendor:</span> {(masters['Vendor'] || []).find(v => v.id === selectedRC.vendorId)?.name}</div>
+                    <div className="text-xs"><span className="text-indigo-400 uppercase font-black">Vendor Site:</span> {(masters['Vendor Site'] || []).find(s => s.id === selectedRC.vendorSiteId)?.name || 'N/A'}</div>
+                    <div className="text-xs"><span className="text-indigo-400 uppercase font-black">Centers:</span> {Array.from(new Set(selectedRC.items.map(i => i.centerName))).join(', ')}</div>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Vendor Site</label>
+                  <select 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                    value={grnForm.vendorSiteId}
+                    onChange={e => setGrnForm({ ...grnForm, vendorSiteId: e.target.value })}
+                    disabled={isGrnReadOnly}
+                  >
+                    <option value="">Select Vendor Site</option>
+                    {(masters['Vendor Site'] || []).filter(s => s.vendorId === selectedRC.vendorId).map(s => (
+                      <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Shipping Address</label>
+                  <select 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                    value={grnForm.shippingAddressId}
+                    onChange={e => setGrnForm({ ...grnForm, shippingAddressId: e.target.value })}
+                    disabled={isGrnReadOnly}
+                  >
+                    <option value="">Select Shipping Address</option>
+                    {(masters['Entity'] || []).flatMap(ent => ent.shippingAddresses || []).map((addr: any) => (
+                      <option key={addr.id} value={addr.id}>{addr.address}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Billing Address</label>
+                  <select 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                    value={grnForm.billingAddressId}
+                    onChange={e => setGrnForm({ ...grnForm, billingAddressId: e.target.value })}
+                    disabled={isGrnReadOnly}
+                  >
+                    <option value="">Select Billing Address</option>
+                    {(masters['Entity'] || []).flatMap(ent => ent.billingAddresses || []).map((addr: any) => (
+                      <option key={addr.id} value={addr.id}>{addr.address}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Location</label>
+                  <select 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                    value={grnForm.location}
+                    onChange={e => setGrnForm({ ...grnForm, location: e.target.value })}
+                    disabled={isGrnReadOnly}
+                  >
+                    <option value="">Select Location</option>
+                    {Array.from(new Set(selectedRC.items.map(i => i.centerName))).map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                
+                <div className="col-span-2 space-y-4 mt-4">
+                  <div className="flex justify-between items-center">
+                    <h4 className="text-sm font-black text-slate-700 uppercase tracking-wider">GRN Items</h4>
+                    <div className="flex items-center space-x-4">
+                      <button 
+                        onClick={() => downloadTemplate('GRN')}
+                        className="text-indigo-600 text-xs font-black hover:underline flex items-center"
+                      >
+                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                        Download Template
+                      </button>
+                      <label className="cursor-pointer text-indigo-600 text-xs font-black hover:underline flex items-center">
+                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                        Bulk Upload
+                        <input type="file" className="hidden" onChange={e => handleBulkUpload(e, 'GRN')} />
+                      </label>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    {selectedRC.items.map((rcItem) => {
+                      const grnItem = grnForm.items?.find(i => i.id === rcItem.id) || { ...rcItem, quantity: 0, amount: 0 };
+                      return (
+                        <div key={rcItem.id} className="grid grid-cols-12 gap-4 items-end bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                          <div className="col-span-4">
+                            <label className="text-[10px] font-black text-slate-400 uppercase">Item</label>
+                            <div className="text-sm font-bold text-slate-700">{rcItem.itemName}</div>
+                            <div className="text-[10px] text-indigo-500 font-black">RC Rate: ₹{rcItem.rate} | Center: {rcItem.centerName}</div>
+                            <div className="text-[10px] text-slate-500 italic mt-1 font-bold">RC Remarks: {rcItem.remarks}</div>
+                          </div>
+                          <div className="col-span-3 space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase">Qty Received</label>
+                            <input 
+                              type="number"
+                              className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+                              value={grnItem.quantity}
+                              disabled={isGrnReadOnly}
+                              onChange={e => {
+                                const qty = Number(e.target.value);
+                                // Validation: GRN qty should not be greater than PO qty (or RC effectively unlimited but we can add a sanity check)
+                                // In RC module, we don't have a PO qty, so we just calculate.
+                                
+                                const updatedItems = [...(grnForm.items || [])];
+                                const index = updatedItems.findIndex(i => i.id === rcItem.id);
+                                
+                                const base = qty * rcItem.rate;
+                                const tdsAmount = base * ((rcItem.tds || 0) / 100);
+                                const gstAmount = base * ((rcItem.gst || 0) / 100);
+                                const totalAmount = base + gstAmount - tdsAmount;
+                                
+                                const newItem: ItemLine = { 
+                                  ...rcItem, 
+                                  quantity: qty, 
+                                  amount: base,
+                                  tdsAmount,
+                                  gstAmount,
+                                  totalAmount
+                                };
+                                if (index > -1) updatedItems[index] = newItem;
+                                else updatedItems.push(newItem);
+                                
+                                const total = updatedItems.reduce((sum, i) => sum + (i.totalAmount || 0), 0);
+                                setGrnForm({ ...grnForm, items: updatedItems, amount: total });
+                              }}
+                            />
+                          </div>
+                          <div className="col-span-3 space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase">Total Amount (INR)</label>
+                            <input 
+                              type="number"
+                              readOnly
+                              className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-indigo-600"
+                              value={(Number(grnItem.totalAmount) || 0).toFixed(2)}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">TDS</label>
+                  <select 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                    value={grnForm.tds}
+                    onChange={e => setGrnForm({ ...grnForm, tds: Number(e.target.value) })}
+                    disabled={isGrnReadOnly}
+                  >
+                    <option value="0">Select TDS</option>
+                    {(masters['TDS'] || []).map(t => <option key={t.id} value={t.rate}>{t.name}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">GST</label>
+                  <select 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                    value={grnForm.gst}
+                    onChange={e => setGrnForm({ ...grnForm, gst: Number(e.target.value) })}
+                    disabled={isGrnReadOnly}
+                  >
+                    <option value="0">Select GST</option>
+                    {(masters['GST'] || []).map(g => <option key={g.id} value={g.rate}>{g.name}</option>)}
+                  </select>
+                </div>
+              </>
+            )}
+
+            {/* Invoice Form Fields */}
+            {selectedGRN && (
+              <>
+                <div className="col-span-2 bg-emerald-50 p-4 rounded-2xl border border-emerald-100 mb-4">
+                  <p className="text-sm font-bold text-emerald-900">Auto-populated from {selectedGRN.id}</p>
+                  <div className="grid grid-cols-3 gap-4 mt-2 text-xs">
+                    <div><span className="text-emerald-400 uppercase">Qty:</span> {selectedGRN.items.reduce((sum, i) => sum + (i.quantity || 0), 0)}</div>
+                    <div><span className="text-emerald-400 uppercase">Amount:</span> ₹{(Number(selectedGRN.amount) || 0).toFixed(2)}</div>
+                    <div><span className="text-emerald-400 uppercase">Vendor Site:</span> {(masters['Vendor Site'] || []).find(s => s.id === selectedGRN.vendorSiteId)?.name || 'N/A'}</div>
+                    <div><span className="text-emerald-400 uppercase">Location:</span> {selectedGRN.location}</div>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Vendor Site</label>
+                  <select 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                    value={invoiceForm.vendorSiteId}
+                    onChange={e => setInvoiceForm({ ...invoiceForm, vendorSiteId: e.target.value })}
+                    disabled={isInvoiceReadOnly}
+                  >
+                    <option value="">Select Vendor Site</option>
+                    {(masters['Vendor Site'] || []).filter(s => s.vendorId === selectedRC.vendorId).map(s => (
+                      <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Shipping Address</label>
+                  <select 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                    value={invoiceForm.shippingAddressId}
+                    onChange={e => setInvoiceForm({ ...invoiceForm, shippingAddressId: e.target.value })}
+                    disabled={isInvoiceReadOnly}
+                  >
+                    <option value="">Select Shipping Address</option>
+                    {(masters['Entity'] || []).flatMap(ent => ent.shippingAddresses || []).map((addr: any) => (
+                      <option key={addr.id} value={addr.id}>{addr.address}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Billing Address</label>
+                  <select 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                    value={invoiceForm.billingAddressId}
+                    onChange={e => setInvoiceForm({ ...invoiceForm, billingAddressId: e.target.value })}
+                    disabled={isInvoiceReadOnly}
+                  >
+                    <option value="">Select Billing Address</option>
+                    {(masters['Entity'] || []).flatMap(ent => ent.billingAddresses || []).map((addr: any) => (
+                      <option key={addr.id} value={addr.id}>{addr.address}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Invoice Location</label>
+                  <select 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                    value={invoiceForm.location}
+                    onChange={e => setInvoiceForm({ ...invoiceForm, location: e.target.value })}
+                    disabled={isInvoiceReadOnly}
+                  >
+                    <option value="">Select Location</option>
+                    {CENTERS.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+
+                <div className="col-span-2 space-y-4 mt-4">
+                  <div className="flex justify-between items-center">
+                    <h4 className="text-sm font-black text-slate-700 uppercase tracking-wider">Invoice Items</h4>
+                    <div className="flex items-center space-x-4">
+                      <button 
+                        onClick={() => downloadTemplate('Invoice')}
+                        className="text-indigo-600 text-xs font-black hover:underline flex items-center"
+                      >
+                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                        Download Template
+                      </button>
+                      <label className="cursor-pointer text-indigo-600 text-xs font-black hover:underline flex items-center">
+                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                        Bulk Upload
+                        <input type="file" className="hidden" onChange={e => handleBulkUpload(e, 'Invoice')} />
+                      </label>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    {selectedGRN.items.map((grnItem) => {
+                      const invItem = invoiceForm.items?.find(i => i.id === grnItem.id) || { ...grnItem, quantity: grnItem.quantity };
+                      return (
+                        <div key={grnItem.id} className="grid grid-cols-12 gap-4 items-center bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                          <div className="col-span-6">
+                            <label className="text-[10px] font-black text-slate-400 uppercase">Item</label>
+                            <div className="text-sm font-bold text-slate-700">{grnItem.itemName}</div>
+                            <div className="text-[10px] text-emerald-500 font-black">GRN Qty: {grnItem.quantity} | Rate: ₹{grnItem.rate} | Center: {grnItem.centerName}</div>
+                            <div className="text-[10px] text-slate-500 italic mt-1 font-bold">RC Remarks: {grnItem.remarks}</div>
+                          </div>
+                          <div className="col-span-3 space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase">Invoice Qty</label>
+                            <input 
+                              type="number"
+                              className={`w-full bg-white border rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 ${invItem.quantity > grnItem.quantity ? 'border-red-500' : 'border-slate-200'}`}
+                              value={invItem.quantity}
+                              disabled={isInvoiceReadOnly}
+                              onChange={e => {
+                                const qty = Number(e.target.value);
+                                if (qty > grnItem.quantity) {
+                                  alert(`Invoice quantity (${qty}) cannot be greater than GRN quantity (${grnItem.quantity})`);
+                                  return;
+                                }
+                                const updatedItems = [...(invoiceForm.items || [])];
+                                const index = updatedItems.findIndex(i => i.id === grnItem.id);
+                                
+                                const base = qty * grnItem.rate;
+                                const tdsAmount = base * ((grnItem.tds || 0) / 100);
+                                const gstAmount = base * ((grnItem.gst || 0) / 100);
+                                const totalAmount = base + gstAmount - tdsAmount;
+                                
+                                const newItem: ItemLine = { 
+                                  ...grnItem, 
+                                  quantity: qty, 
+                                  amount: base,
+                                  tdsAmount,
+                                  gstAmount,
+                                  totalAmount
+                                };
+                                if (index > -1) updatedItems[index] = newItem;
+                                else updatedItems.push(newItem);
+                                
+                                setInvoiceForm({ ...invoiceForm, items: updatedItems });
+                              }}
+                            />
+                            {invItem.quantity > grnItem.quantity && <div className="text-[8px] text-red-500 font-bold uppercase">Exceeds GRN Qty</div>}
+                          </div>
+                          <div className="col-span-3 space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase">Amount (INR)</label>
+                            <div className="text-sm font-black text-emerald-600">₹{(Number(invItem.totalAmount) || 0).toFixed(2)}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">TDS</label>
+                  <select 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                    value={invoiceForm.tds}
+                    onChange={e => setInvoiceForm({ ...invoiceForm, tds: Number(e.target.value) })}
+                    disabled={isInvoiceReadOnly}
+                  >
+                    <option value="0">Select TDS</option>
+                    {(masters['TDS'] || []).map(t => <option key={t.id} value={t.rate}>{t.name}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">GST</label>
+                  <select 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                    value={invoiceForm.gst}
+                    onChange={e => setInvoiceForm({ ...invoiceForm, gst: Number(e.target.value) })}
+                    disabled={isInvoiceReadOnly}
+                  >
+                    <option value="0">Select GST</option>
+                    {(masters['GST'] || []).map(g => <option key={g.id} value={g.rate}>{g.name}</option>)}
+                  </select>
+                </div>
+              </>
+            )}
+
+            {/* Document Upload Section */}
+            <div className="col-span-2 border-t border-slate-100 pt-6 mt-4">
+              <div className="flex justify-between items-center mb-4">
+                <h4 className="text-sm font-black text-slate-700 uppercase tracking-wider">Supporting Documents</h4>
+                <label className="cursor-pointer">
+                  <span className="text-indigo-600 text-xs font-black hover:underline">+ Upload File</span>
+                  <input 
+                    type="file" 
+                    className="hidden" 
+                    onChange={(e) => handleFileUpload(e, selectedRC ? (selectedGRN ? 'Invoice' : 'GRN') : 'RC')}
+                  />
+                </label>
+              </div>
+              
+              <div className="space-y-2">
+                {/* Show inherited documents */}
+                {selectedRC && selectedRC.attachments.map(att => (
+                  <div key={att.id} className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-200">
+                    <div className="flex items-center space-x-3">
+                      <div className="bg-indigo-100 p-2 rounded-lg text-indigo-600">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                      </div>
+                      <span className="text-sm font-medium text-slate-600">{att.name} <span className="text-[10px] text-indigo-400 font-black uppercase ml-2">From RC</span></span>
+                    </div>
+                  </div>
+                ))}
+                {selectedGRN && selectedGRN.attachments.map(att => (
+                  <div key={att.id} className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-200">
+                    <div className="flex items-center space-x-3">
+                      <div className="bg-emerald-100 p-2 rounded-lg text-emerald-600">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                      </div>
+                      <span className="text-sm font-medium text-slate-600">{att.name} <span className="text-[10px] text-emerald-400 font-black uppercase ml-2">From GRN</span></span>
+                    </div>
+                  </div>
+                ))}
+                {/* Show current form documents */}
+                {(selectedRC ? (selectedGRN ? invoiceForm : grnForm) : rcForm).attachments?.map(att => (
+                  <div key={att.id} className="flex items-center justify-between bg-white p-3 rounded-xl border-2 border-indigo-100 border-dashed">
+                    <div className="flex items-center space-x-3">
+                      <div className="bg-indigo-600 p-2 rounded-lg text-white">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                      </div>
+                      <span className="text-sm font-bold text-slate-800">{att.name}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-8 flex justify-end space-x-4">
+            <button 
+              onClick={() => { setShowForm(false); resetForms(); }}
+              className="px-6 py-3 rounded-xl font-black text-slate-500 hover:bg-slate-50 transition-colors"
+            >
+              Cancel
+            </button>
+            
+            {/* Reviewer/Approver Actions */}
+            {showForm && (
+              <>
+                {viewMode === 'RC' && rcForm.id && (canCompleteReview(rcForm as RateContract) || canApprove(rcForm as RateContract)) && (
+                  <div className="flex space-x-4">
+                    {canCompleteReview(rcForm as RateContract) && (
+                      <button onClick={() => completeReviewRC(rcForm.id!)} className="bg-amber-600 text-white px-8 py-3 rounded-xl font-black shadow-lg shadow-amber-200 hover:scale-105 transition-transform">Complete Review</button>
+                    )}
+                    {canApprove(rcForm as RateContract) && (
+                      <button onClick={() => approveRC(rcForm.id!)} className="bg-emerald-600 text-white px-8 py-3 rounded-xl font-black shadow-lg shadow-emerald-200 hover:scale-105 transition-transform">Approve</button>
+                    )}
+                    <button onClick={() => setShowRejectionModal({ id: rcForm.id!, type: 'RC' })} className="bg-rose-600 text-white px-8 py-3 rounded-xl font-black shadow-lg shadow-rose-200 hover:scale-105 transition-transform">Reject</button>
+                  </div>
+                )}
+                {viewMode === 'GRN' && grnForm.id && (canCompleteReview(grnForm as GRN) || canApprove(grnForm as GRN)) && (
+                  <div className="flex space-x-4">
+                    {canCompleteReview(grnForm as GRN) && (
+                      <button onClick={() => completeReviewGRN(grnForm.id!)} className="bg-amber-600 text-white px-8 py-3 rounded-xl font-black shadow-lg shadow-amber-200 hover:scale-105 transition-transform">Complete Review</button>
+                    )}
+                    {canApprove(grnForm as GRN) && (
+                      <button onClick={() => approveGRN(grnForm.id!)} className="bg-emerald-600 text-white px-8 py-3 rounded-xl font-black shadow-lg shadow-emerald-200 hover:scale-105 transition-transform">Approve</button>
+                    )}
+                    <button onClick={() => setShowRejectionModal({ id: grnForm.id!, type: 'GRN' })} className="bg-rose-600 text-white px-8 py-3 rounded-xl font-black shadow-lg shadow-rose-200 hover:scale-105 transition-transform">Reject</button>
+                  </div>
+                )}
+                {viewMode === 'Invoice' && invoiceForm.id && (canCompleteReview(invoiceForm as Invoice) || canApprove(invoiceForm as Invoice)) && (
+                  <div className="flex space-x-4">
+                    {canCompleteReview(invoiceForm as Invoice) && (
+                      <button onClick={() => completeReviewInvoice(invoiceForm.id!)} className="bg-amber-600 text-white px-8 py-3 rounded-xl font-black shadow-lg shadow-amber-200 hover:scale-105 transition-transform">Complete Review</button>
+                    )}
+                    {canApprove(invoiceForm as Invoice) && (
+                      <button onClick={() => approveInvoice(invoiceForm.id!)} className="bg-emerald-600 text-white px-8 py-3 rounded-xl font-black shadow-lg shadow-emerald-200 hover:scale-105 transition-transform">Approve</button>
+                    )}
+                    <button onClick={() => setShowRejectionModal({ id: invoiceForm.id!, type: 'Invoice' })} className="bg-rose-600 text-white px-8 py-3 rounded-xl font-black shadow-lg shadow-rose-200 hover:scale-105 transition-transform">Reject</button>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Submit Button (only for creators in editable mode) */}
+            {((viewMode === 'RC' && !isRcReadOnly) || 
+              (viewMode === 'GRN' && !isGrnReadOnly) || 
+              (viewMode === 'Invoice' && !isInvoiceReadOnly)) && (
+              <button 
+                onClick={selectedRC ? (selectedGRN ? handleCreateInvoice : handleCreateGRN) : handleCreateRC}
+                className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-black shadow-lg shadow-indigo-200 hover:scale-105 transition-transform"
+              >
+                Submit for Approval
+              </button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50/50 border-b border-slate-100">
+                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">ID / Date</th>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Details</th>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Status</th>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {viewMode === 'RC' && rateContracts.map(rc => (
+                <tr key={rc.id} className="hover:bg-slate-50/50 transition-colors">
+                  <td className="px-6 py-4">
+                    <div className="text-sm font-black text-slate-900">{rc.id}</div>
+                    <div className="text-[10px] text-slate-400 font-bold">{new Date(rc.createdAt).toLocaleDateString()}</div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="text-sm font-bold text-slate-700">{(masters['Vendor'] || []).find(v => v.id === rc.vendorId)?.name}</div>
+                    <div className="text-xs text-slate-500">{rc.items.length} Items • {Array.from(new Set(rc.items.map(i => i.centerName))).length} Centers • ₹{(Number(rc.amount) || 0).toFixed(2)}</div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex flex-col space-y-1">
+                      <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider w-fit ${
+                        rc.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : 
+                        rc.status === 'Rejected' ? 'bg-rose-100 text-rose-700' :
+                        'bg-amber-100 text-amber-700'
+                      }`}>
+                        {rc.status}
+                      </span>
+                      {rc.status === 'Pending' && (
+                        <div className="text-[10px] font-bold text-slate-400">
+                          Step {rc.currentStepIndex + 1}
+                        </div>
+                      )}
+                      {rc.status === 'Rejected' && rc.rejectionRemarks && (
+                        <div className="text-[10px] font-bold text-rose-500 italic">
+                          "{rc.rejectionRemarks}"
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex space-x-2">
+                      <button 
+                        onClick={() => {
+                          setRcForm(rc);
+                          setShowForm(true);
+                        }}
+                        className="text-xs font-black text-slate-600 hover:underline"
+                      >
+                        View
+                      </button>
+                      {canCompleteReview(rc) && (
+                        <button onClick={() => completeReviewRC(rc.id)} className="text-xs font-black text-amber-600 hover:underline">Complete Review</button>
+                      )}
+                      {canApprove(rc) && (
+                        <button onClick={() => approveRC(rc.id)} className="text-xs font-black text-emerald-600 hover:underline">Approve</button>
+                      )}
+                      {(canCompleteReview(rc) || canApprove(rc)) && (
+                        <button onClick={() => setShowRejectionModal({ id: rc.id, type: 'RC' })} className="text-xs font-black text-rose-600 hover:underline">Reject</button>
+                      )}
+                      {rc.status === 'Approved' && rc.createdBy === currentUser.id && (
+                        <>
+                          <button 
+                            onClick={() => { setSelectedRC(rc); setShowForm(true); }}
+                            className="text-xs font-black text-indigo-600 hover:underline"
+                          >
+                            Create GRN
+                          </button>
+                          <button 
+                            onClick={() => amendRC(rc.id)}
+                            className="text-xs font-black text-slate-600 hover:underline"
+                          >
+                            Amend
+                          </button>
+                        </>
+                      )}
+                      {rc.status === 'Rejected' && rc.createdBy === currentUser.id && (
+                        <button 
+                          onClick={() => {
+                            setRcForm(rc);
+                            setShowForm(true);
+                          }}
+                          className="text-xs font-black text-amber-600 hover:underline"
+                        >
+                          Resubmit
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+
+              {viewMode === 'GRN' && grns.map(grn => {
+                const rc = rateContracts.find(r => r.id === grn.rateContractId);
+                return (
+                  <tr key={grn.id} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="px-6 py-4">
+                      <div className="text-sm font-black text-slate-900">{grn.id}</div>
+                      <div className="text-[10px] text-slate-400 font-bold">Against {grn.rateContractId}</div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-sm font-bold text-slate-700">{grn.location}</div>
+                      <div className="text-xs text-slate-500">{grn.items.length} Items • Total: ₹{(Number(grn.amount) || 0).toFixed(2)}</div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col space-y-1">
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider w-fit ${
+                          grn.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : 
+                          grn.status === 'Rejected' ? 'bg-rose-100 text-rose-700' :
+                          'bg-amber-100 text-amber-700'
+                        }`}>
+                          {grn.status}
+                        </span>
+                        {grn.status === 'Pending' && (
+                          <div className="text-[10px] font-bold text-slate-400">
+                            Step {grn.currentStepIndex + 1}
+                          </div>
+                        )}
+                        {grn.status === 'Rejected' && grn.rejectionRemarks && (
+                          <div className="text-[10px] font-bold text-rose-500 italic">
+                            "{grn.rejectionRemarks}"
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex space-x-2">
+                        <button 
+                          onClick={() => {
+                            setGrnForm(grn);
+                            setSelectedRC(rateContracts.find(r => r.id === grn.rateContractId) || null);
+                            setShowForm(true);
+                          }}
+                          className="text-xs font-black text-slate-600 hover:underline"
+                        >
+                          View
+                        </button>
+                        {canCompleteReview(grn) && (
+                          <button onClick={() => completeReviewGRN(grn.id)} className="text-xs font-black text-amber-600 hover:underline">Complete Review</button>
+                        )}
+                        {canApprove(grn) && (
+                          <button onClick={() => approveGRN(grn.id)} className="text-xs font-black text-emerald-600 hover:underline">Approve</button>
+                        )}
+                        {(canCompleteReview(grn) || canApprove(grn)) && (
+                          <button onClick={() => setShowRejectionModal({ id: grn.id, type: 'GRN' })} className="text-xs font-black text-rose-600 hover:underline">Reject</button>
+                        )}
+                        {grn.status === 'Approved' && grn.createdBy === currentUser.id && (
+                          <>
+                            <button 
+                              onClick={() => { 
+                                setSelectedRC(rc || null); 
+                                setSelectedGRN(grn); 
+                                setShowForm(true); 
+                              }}
+                              className="text-xs font-black text-indigo-600 hover:underline"
+                            >
+                              Create Invoice
+                            </button>
+                            <button 
+                              onClick={() => reverseGRN(grn.id)}
+                              className="text-xs font-black text-rose-600 hover:underline"
+                            >
+                              Reverse
+                            </button>
+                          </>
+                        )}
+                        {grn.status === 'Rejected' && grn.createdBy === currentUser.id && (
+                          <button 
+                            onClick={() => {
+                              setGrnForm(grn);
+                              setSelectedRC(rateContracts.find(r => r.id === grn.rateContractId) || null);
+                              setShowForm(true);
+                            }}
+                            className="text-xs font-black text-amber-600 hover:underline"
+                          >
+                            Resubmit
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+
+              {viewMode === 'Invoice' && invoices.map(inv => (
+                <tr key={inv.id} className="hover:bg-slate-50/50 transition-colors">
+                  <td className="px-6 py-4">
+                    <div className="text-sm font-black text-slate-900">{inv.id}</div>
+                    <div className="text-[10px] text-slate-400 font-bold">Against {inv.grnId}</div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="text-sm font-bold text-slate-700">{inv.location}</div>
+                    <div className="text-xs text-slate-500">{new Date(inv.createdAt).toLocaleDateString()}</div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex flex-col space-y-1">
+                      <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider w-fit ${
+                        inv.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : 
+                        inv.status === 'Rejected' ? 'bg-rose-100 text-rose-700' :
+                        'bg-amber-100 text-amber-700'
+                      }`}>
+                        {inv.status}
+                      </span>
+                      {inv.status === 'Pending' && (
+                        <div className="text-[10px] font-bold text-slate-400">
+                          Step {inv.currentStepIndex + 1}
+                        </div>
+                      )}
+                      {inv.status === 'Rejected' && inv.rejectionRemarks && (
+                        <div className="text-[10px] font-bold text-rose-500 italic">
+                          "{inv.rejectionRemarks}"
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex space-x-2">
+                      <button 
+                        onClick={() => {
+                          setInvoiceForm(inv);
+                          const grn = grns.find(g => g.id === inv.grnId);
+                          setSelectedGRN(grn || null);
+                          if (grn) {
+                            setSelectedRC(rateContracts.find(r => r.id === grn.rateContractId) || null);
+                          }
+                          setShowForm(true);
+                        }}
+                        className="text-xs font-black text-slate-600 hover:underline"
+                      >
+                        View
+                      </button>
+                      {canCompleteReview(inv) && (
+                        <button onClick={() => completeReviewInvoice(inv.id)} className="text-xs font-black text-amber-600 hover:underline">Complete Review</button>
+                      )}
+                      {canApprove(inv) && (
+                        <button onClick={() => approveInvoice(inv.id)} className="text-xs font-black text-emerald-600 hover:underline">Approve</button>
+                      )}
+                      {(canCompleteReview(inv) || canApprove(inv)) && (
+                        <button onClick={() => setShowRejectionModal({ id: inv.id, type: 'Invoice' })} className="text-xs font-black text-rose-600 hover:underline">Reject</button>
+                      )}
+                      {inv.status === 'Approved' && inv.createdBy === currentUser.id && (
+                        <button 
+                          onClick={() => reverseInvoice(inv.id)}
+                          className="text-xs font-black text-rose-600 hover:underline"
+                        >
+                          Reverse
+                        </button>
+                      )}
+                      {inv.status === 'Rejected' && inv.createdBy === currentUser.id && (
+                        <button 
+                          onClick={() => {
+                            setInvoiceForm(inv);
+                            setSelectedGRN(grns.find(g => g.id === inv.grnId) || null);
+                            setShowForm(true);
+                          }}
+                          className="text-xs font-black text-amber-600 hover:underline"
+                        >
+                          Resubmit
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+
+              {((viewMode === 'RC' && rateContracts.length === 0) || 
+                (viewMode === 'GRN' && grns.length === 0) || 
+                (viewMode === 'Invoice' && invoices.length === 0)) && (
+                <tr>
+                  <td colSpan={4} className="px-6 py-12 text-center text-slate-400 font-medium">
+                    No records found for {viewMode}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {showRejectionModal && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl animate-in zoom-in-95 duration-200">
+            <h3 className="text-xl font-black text-slate-900 mb-4">Reject {showRejectionModal.type}</h3>
+            <p className="text-slate-500 text-sm mb-6 font-medium">Please provide a reason for rejecting this {showRejectionModal.type}. This will be visible to the creator.</p>
+            <textarea
+              className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-rose-500 outline-none font-medium text-sm mb-6"
+              rows={4}
+              placeholder="Enter rejection remarks..."
+              value={rejectionRemarks}
+              onChange={e => setRejectionRemarks(e.target.value)}
+            />
+            <div className="flex space-x-4">
+              <button 
+                onClick={() => { setShowRejectionModal(null); setRejectionRemarks(''); }}
+                className="flex-1 px-6 py-3 rounded-xl font-black text-slate-500 hover:bg-slate-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={() => handleReject(showRejectionModal.id, showRejectionModal.type)}
+                className="flex-1 bg-rose-600 text-white px-6 py-3 rounded-xl font-black shadow-lg shadow-rose-200 hover:scale-105 transition-transform"
+              >
+                Confirm Reject
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default RateContractModule;

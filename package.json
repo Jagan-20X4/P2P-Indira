@@ -1,0 +1,10 @@
+{
+  "name": "p2p-indira",
+  "private": true,
+  "version": "1.0.0",
+  "description": "P2P Admin Elite - Backend (port 4050) + Frontend (port 3000)",
+  "scripts": {
+    "start": "cd backend && npm start",
+    "dev": "cd frontend && npm run dev"
+  }
+}

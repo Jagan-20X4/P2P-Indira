@@ -1,0 +1,870 @@
+
+import React, { useState, useEffect } from 'react';
+import Papa from 'papaparse';
+import { 
+  Invoice, MasterRecord, MasterType, 
+  Frequency, TransactionType, Attachment, ItemLine,
+  User, WorkflowRule, Budget, BudgetControlType, ModuleType, ApprovalType
+} from '../types';
+import { DEPARTMENTS, DEPT_SUBDEPT_MAP, CENTERS } from '../constants';
+import MultiSelect from './MultiSelect';
+
+interface DirectInvoiceModuleProps {
+  masters: Record<MasterType, MasterRecord[]>;
+  currentUser: User;
+  workflows: WorkflowRule[];
+  budgets: Budget[];
+  setBudgets: React.Dispatch<React.SetStateAction<Budget[]>>;
+}
+
+const DirectInvoiceModule: React.FC<DirectInvoiceModuleProps> = ({ masters, currentUser, workflows, budgets, setBudgets }) => {
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  
+  // Form states
+  const [invoiceForm, setInvoiceForm] = useState<any>({
+    entityName: masters.Entity?.[0]?.name || '',
+    vendorId: '',
+    vendorSiteId: '',
+    transactionType: 'Material',
+    invoiceDate: new Date().toISOString().split('T')[0],
+    invoiceNumber: '',
+    department: '',
+    subDepartment: '',
+    centerNames: [],
+    items: [{ id: Math.random().toString(), itemName: '', quantity: 1, rate: 0, amount: 0, remarks: '' }],
+    tds: 0,
+    gst: 0,
+    amount: 0,
+    remarks: '',
+    attachments: [],
+    shippingAddressId: '',
+    billingAddressId: '',
+    isUnbudgeted: false,
+    unbudgetedJustification: ''
+  });
+
+  // Recalculate all items when top-level TDS or GST changes
+  useEffect(() => {
+    setInvoiceForm((prev: any) => {
+      const vendor = masters.Vendor.find(v => v.id === prev.vendorId);
+      const center = masters.Center.find(c => c.name === prev.centerNames?.[0]);
+      const isIntraState = vendor && center && vendor.state === center.state;
+      const tdsPercent = prev.tds || 0;
+      const gstPercent = prev.gst || 0;
+
+      const updatedItems = (prev.items || []).map((item: any) => {
+        const qty = item.quantity || 0;
+        const rate = item.rate || 0;
+        const baseAmount = qty * rate;
+        const tdsAmount = baseAmount * (tdsPercent / 100);
+        const gstAmount = baseAmount * (gstPercent / 100);
+        
+        const updated = { 
+          ...item, 
+          amount: baseAmount,
+          tds: tdsPercent,
+          gst: gstPercent,
+          tdsAmount,
+          gstAmount
+        };
+        
+        if (isIntraState) {
+          updated.cgst = gstAmount / 2;
+          updated.sgst = gstAmount / 2;
+          updated.igst = 0;
+        } else {
+          updated.cgst = 0;
+          updated.sgst = 0;
+          updated.igst = gstAmount;
+        }
+        
+        updated.totalAmount = baseAmount + gstAmount - tdsAmount;
+        return updated;
+      });
+
+      return { ...prev, items: updatedItems };
+    });
+  }, [invoiceForm.tds, invoiceForm.gst, invoiceForm.vendorId, invoiceForm.centerNames]);
+
+  // Update total amount whenever items change
+  useEffect(() => {
+    const total = (invoiceForm.items || []).reduce((sum: number, item: any) => sum + (item.totalAmount || 0), 0);
+    setInvoiceForm((prev: any) => ({ ...prev, amount: total }));
+  }, [invoiceForm.items]);
+
+  const addItem = () => {
+    setInvoiceForm((prev: any) => ({
+      ...prev,
+      items: [...(prev.items || []), { id: Math.random().toString(), itemName: '', quantity: 1, rate: 0, amount: 0, tds: 0, gst: 0, remarks: '', coaCode: '' }]
+    }));
+  };
+
+  const removeItem = (id: string) => {
+    setInvoiceForm((prev: any) => ({
+      ...prev,
+      items: (prev.items || []).filter((i: any) => i.id !== id)
+    }));
+  };
+
+  const updateItem = (id: string, field: keyof ItemLine, value: any) => {
+    setInvoiceForm((prev: any) => {
+      const vendor = masters.Vendor.find(v => v.id === prev.vendorId);
+      const center = masters.Center.find(c => c.name === prev.centerNames?.[0]);
+      const isIntraState = vendor && center && vendor.state === center.state;
+      const tdsPercent = prev.tds || 0;
+      const gstPercent = prev.gst || 0;
+
+      return {
+        ...prev,
+        items: (prev.items || []).map((item: any) => {
+          if (item.id === id) {
+            const updated = { ...item, [field]: value };
+            if (field === 'quantity' || field === 'rate' || field === 'tds' || field === 'gst') {
+              const qty = updated.quantity || 0;
+              const rate = updated.rate || 0;
+              
+              const baseAmount = qty * rate;
+              const tdsAmount = baseAmount * (tdsPercent / 100);
+              const gstAmount = baseAmount * (gstPercent / 100);
+              
+              updated.amount = baseAmount;
+              updated.tds = tdsPercent;
+              updated.gst = gstPercent;
+              updated.tdsAmount = tdsAmount;
+              updated.gstAmount = gstAmount;
+              
+              if (isIntraState) {
+                updated.cgst = gstAmount / 2;
+                updated.sgst = gstAmount / 2;
+                updated.igst = 0;
+              } else {
+                updated.cgst = 0;
+                updated.sgst = 0;
+                updated.igst = gstAmount;
+              }
+              
+              updated.totalAmount = baseAmount + gstAmount - tdsAmount;
+            }
+            return updated;
+          }
+          return item;
+        })
+      };
+    });
+  };
+
+  const downloadTemplate = () => {
+    const headers = 'Item Name,Qty,Rate,Remarks';
+    const blob = new Blob([headers], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.setAttribute('hidden', '');
+    a.setAttribute('href', url);
+    a.setAttribute('download', `Direct_Invoice_Template.csv`);
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  const handleBulkUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        const data = results.data as any[];
+        const newItems: ItemLine[] = data.map((row: any) => {
+          const itemName = row['Item Name'] || row['itemName'] || '';
+          const qty = parseFloat(row['Qty'] || row['quantity'] || '0');
+          const rate = parseFloat(row['Rate'] || row['rate'] || '0');
+          
+          const base = qty * rate;
+          const tdsPercent = invoiceForm.tds || 0;
+          const gstPercent = invoiceForm.gst || 0;
+          const tdsAmount = base * (tdsPercent / 100);
+          const gstAmount = base * (gstPercent / 100);
+
+          return {
+            id: Math.random().toString(),
+            itemName,
+            quantity: qty,
+            rate,
+            amount: base,
+            tds: tdsPercent,
+            gst: gstPercent,
+            tdsAmount,
+            gstAmount,
+            totalAmount: base + gstAmount - tdsAmount,
+            remarks: row['Remarks'] || row['remarks'] || ''
+          };
+        });
+
+        setInvoiceForm((prev: any) => ({ ...prev, items: newItems }));
+        alert(`Bulk upload processed: ${newItems.length} items found.`);
+      },
+      error: (error) => {
+        alert(`Error parsing CSV: ${error.message}`);
+      }
+    });
+
+    e.target.value = '';
+  };
+
+  const handleCreateInvoice = () => {
+    // Validation
+    if (!invoiceForm.vendorId || !invoiceForm.invoiceNumber || !invoiceForm.department || !invoiceForm.subDepartment || (invoiceForm.centerNames || []).length === 0) {
+      alert('Please fill all mandatory header fields.');
+      return;
+    }
+    if ((invoiceForm.items || []).some((i: any) => !i.itemName || !i.remarks)) {
+      alert('Item Name and Remarks are mandatory for all item lines.');
+      return;
+    }
+
+    if (invoiceForm.isUnbudgeted && !invoiceForm.unbudgetedJustification) {
+      alert('Justification is mandatory for unbudgeted expenses.');
+      return;
+    }
+
+    const budgetCheck = checkBudget(invoiceForm);
+    if (!budgetCheck.ok) {
+      alert(budgetCheck.errors?.join('\n'));
+      return;
+    }
+
+    const newInvoice: any = {
+      ...invoiceForm,
+      id: `DINV-${Math.floor(Math.random() * 10000)}`,
+      status: budgetCheck.ok ? 'Pending' : 'Budget Hold',
+      currentStepIndex: 0,
+      createdAt: new Date().toISOString(),
+    };
+    setInvoices([...invoices, newInvoice]);
+    setShowForm(false);
+    resetForm();
+  };
+
+  const checkBudget = (inv: any) => {
+    if (inv.isUnbudgeted) return { ok: true };
+
+    const errors: string[] = [];
+    inv.items?.forEach((item: any) => {
+      if (!item.coaCode) return;
+      const budget = budgets.find(b => b.coaCode === item.coaCode);
+      if (!budget) {
+        errors.push(`No budget found for GL Code ${item.coaCode}`);
+        return;
+      }
+      const available = budget.amount - budget.consumedAmount;
+      if ((item.totalAmount || item.amount) > available && budget.controlType === BudgetControlType.HARD_STOP) {
+        errors.push(`Budget exceeded for GL ${item.coaCode} - Available: ₹${available.toLocaleString()} | Required: ₹${(item.totalAmount || item.amount).toLocaleString()}`);
+      }
+    });
+
+    return { ok: errors.length === 0, errors };
+  };
+
+  const deductBudget = (inv: Invoice) => {
+    if ((inv as any).isUnbudgeted) return;
+
+    setBudgets(prev => prev.map(budget => {
+      const invItemsForGL = inv.items.filter(i => i.coaCode === budget.coaCode);
+      if (invItemsForGL.length > 0) {
+        const totalForGL = invItemsForGL.reduce((sum, i) => sum + (i.totalAmount || i.amount), 0);
+        return { ...budget, consumedAmount: budget.consumedAmount + totalForGL };
+      }
+      return budget;
+    }));
+  };
+
+  const resetForm = () => {
+    setInvoiceForm({
+      entityName: masters.Entity?.[0]?.name || '',
+      vendorId: '',
+      vendorSiteId: '',
+      transactionType: 'Material',
+      invoiceDate: new Date().toISOString().split('T')[0],
+      invoiceNumber: '',
+      department: '',
+      subDepartment: '',
+      centerNames: [],
+      items: [{ id: Math.random().toString(), itemName: '', quantity: 1, rate: 0, amount: 0, remarks: '', coaCode: '' }],
+      tds: 0,
+      gst: 0,
+      amount: 0,
+      remarks: '',
+      attachments: [],
+      shippingAddressId: '',
+      billingAddressId: '',
+      isUnbudgeted: false,
+      unbudgetedJustification: ''
+    });
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const newAttachment: Attachment = {
+      id: `att-${Math.random()}`,
+      name: file.name,
+      url: URL.createObjectURL(file),
+      uploadedAt: new Date().toISOString(),
+      source: 'Invoice'
+    };
+
+    setInvoiceForm((prev: any) => ({ ...prev, attachments: [...(prev.attachments || []), newAttachment] }));
+    e.target.value = '';
+  };
+
+  const canApprove = (doc: Invoice) => {
+    if (doc.status !== 'Pending') return false;
+    
+    const rule = workflows.find(w => 
+      w.entityName === doc.entityName &&
+      w.moduleType === ModuleType.DIRECT_INVOICE &&
+      w.subDepartment === doc.subDepartment &&
+      (!w.centerName || (doc as any).centerNames?.includes(w.centerName) || doc.location === w.centerName) &&
+      doc.amount >= w.minAmount && 
+      (w.maxAmount === null || doc.amount <= w.maxAmount)
+    );
+
+    if (!rule) return true; 
+
+    const currentStep = rule.approvalChain[doc.currentStepIndex];
+    if (!currentStep) return true;
+
+    return currentStep.type === ApprovalType.APPROVER && currentStep.userIds.includes(currentUser.id);
+  };
+
+  const canCompleteReview = (doc: Invoice) => {
+    if (doc.status !== 'Pending') return false;
+    const rule = workflows.find(w =>
+      w.entityName === doc.entityName &&
+      w.moduleType === ModuleType.DIRECT_INVOICE &&
+      w.subDepartment === doc.subDepartment &&
+      (!w.centerName || (doc as any).centerNames?.includes(w.centerName) || doc.location === w.centerName) &&
+      doc.amount >= w.minAmount &&
+      (w.maxAmount === null || doc.amount <= w.maxAmount)
+    );
+    if (!rule) return false;
+    const currentStep = rule.approvalChain[doc.currentStepIndex];
+    if (!currentStep) return false;
+    return currentStep.type === ApprovalType.REVIEWER && currentStep.userIds.includes(currentUser.id);
+  };
+
+  const completeReviewInvoice = (id: string) => {
+    setInvoices(invoices.map(inv => {
+      if (inv.id !== id) return inv;
+      const rule = workflows.find(w =>
+        w.entityName === inv.entityName &&
+        w.moduleType === ModuleType.DIRECT_INVOICE &&
+        w.subDepartment === inv.subDepartment &&
+        (!w.centerName || (inv as any).centerNames?.includes(w.centerName) || inv.location === w.centerName) &&
+        inv.amount >= w.minAmount &&
+        (w.maxAmount === null || inv.amount <= w.maxAmount)
+      );
+      if (!rule || inv.currentStepIndex >= rule.approvalChain.length - 1) return inv;
+      return { ...inv, currentStepIndex: inv.currentStepIndex + 1 };
+    }));
+  };
+
+  const approveInvoice = (id: string) => {
+    setInvoices(invoices.map(inv => {
+      if (inv.id !== id) return inv;
+
+      const rule = workflows.find(w => 
+        w.entityName === inv.entityName &&
+        w.moduleType === ModuleType.DIRECT_INVOICE &&
+        w.subDepartment === inv.subDepartment &&
+        (!w.centerName || (inv as any).centerNames?.includes(w.centerName) || inv.location === w.centerName) &&
+        inv.amount >= w.minAmount && 
+        (w.maxAmount === null || inv.amount <= w.maxAmount)
+      );
+
+      if (!rule || inv.currentStepIndex >= rule.approvalChain.length - 1) {
+        // Final budget check before approval
+        const budgetCheck = checkBudget(inv);
+        if (!budgetCheck.ok) {
+          alert(`Cannot approve Invoice: ${budgetCheck.errors?.join('\n')}`);
+          return { ...inv, status: 'Budget Hold' };
+        }
+        deductBudget(inv);
+        return { ...inv, status: 'Approved' };
+      }
+
+      return { ...inv, currentStepIndex: inv.currentStepIndex + 1 };
+    }));
+  };
+
+  const reverseInvoice = (id: string) => {
+    setInvoices(invoices.map(inv => inv.id === id ? { ...inv, status: 'Reversed' } : inv));
+    alert('Direct Invoice reversed. You can now recreate it.');
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h2 className="text-xl font-black text-slate-800">Direct Invoice Management</h2>
+        {!showForm && (
+          <button 
+            onClick={() => setShowForm(true)}
+            className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-black shadow-lg shadow-indigo-200 hover:scale-105 transition-transform"
+          >
+            + Create Direct Invoice
+          </button>
+        )}
+      </div>
+
+      {showForm ? (
+        <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-100 animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-lg font-black text-slate-900">New Direct Invoice</h3>
+            <button onClick={() => { setShowForm(false); resetForm(); }} className="text-slate-400 hover:text-slate-600">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Entity</label>
+              <select 
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                value={invoiceForm.entityName}
+                onChange={e => setInvoiceForm({ ...invoiceForm, entityName: e.target.value })}
+              >
+                {masters.Entity.map(e => <option key={e.id} value={e.name}>{e.name}</option>)}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Vendor</label>
+              <select 
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                value={invoiceForm.vendorId}
+                onChange={e => setInvoiceForm({ ...invoiceForm, vendorId: e.target.value, vendorSiteId: '' })}
+              >
+                <option value="">Select Vendor</option>
+                {masters.Vendor.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Vendor Site</label>
+              <select 
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                value={invoiceForm.vendorSiteId}
+                onChange={e => setInvoiceForm({ ...invoiceForm, vendorSiteId: e.target.value })}
+                disabled={!invoiceForm.vendorId}
+              >
+                <option value="">Select Vendor Site</option>
+                {masters['Vendor Site']?.filter(s => s.vendorId === invoiceForm.vendorId).map(s => (
+                  <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Shipping Address</label>
+              <select 
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                value={invoiceForm.shippingAddressId}
+                onChange={e => setInvoiceForm({ ...invoiceForm, shippingAddressId: e.target.value })}
+              >
+                <option value="">Select Shipping Address</option>
+                {masters.Entity.flatMap(ent => ent.shippingAddresses || []).map((addr: any) => (
+                  <option key={addr.id} value={addr.id}>{addr.address}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Billing Address</label>
+              <select 
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                value={invoiceForm.billingAddressId}
+                onChange={e => setInvoiceForm({ ...invoiceForm, billingAddressId: e.target.value })}
+              >
+                <option value="">Select Billing Address</option>
+                {masters.Entity.flatMap(ent => ent.billingAddresses || []).map((addr: any) => (
+                  <option key={addr.id} value={addr.id}>{addr.address}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Invoice Number</label>
+              <input 
+                type="text" 
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                value={invoiceForm.invoiceNumber}
+                onChange={e => setInvoiceForm({ ...invoiceForm, invoiceNumber: e.target.value })}
+                placeholder="INV/2024/001"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Invoice Date</label>
+              <input 
+                type="date" 
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                value={invoiceForm.invoiceDate}
+                onChange={e => setInvoiceForm({ ...invoiceForm, invoiceDate: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Transaction Type</label>
+              <select 
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                value={invoiceForm.transactionType}
+                onChange={e => setInvoiceForm({ ...invoiceForm, transactionType: e.target.value as TransactionType })}
+              >
+                <option value="Material">Material</option>
+                <option value="Service">Service</option>
+                <option value="Asset">Asset</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Department</label>
+              <select 
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                value={invoiceForm.department}
+                onChange={e => setInvoiceForm({ ...invoiceForm, department: e.target.value })}
+              >
+                <option value="">Select Department</option>
+                {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Sub-Department</label>
+              <select 
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                value={invoiceForm.subDepartment}
+                onChange={e => setInvoiceForm({ ...invoiceForm, subDepartment: e.target.value })}
+              >
+                <option value="">Select Sub-Department</option>
+                {invoiceForm.department && DEPT_SUBDEPT_MAP[invoiceForm.department]?.map(sd => <option key={sd} value={sd}>{sd}</option>)}
+              </select>
+            </div>
+            <div className="space-y-4 col-span-2 bg-amber-50 p-6 rounded-3xl border border-amber-100">
+              <div className="flex items-center space-x-3">
+                <input 
+                  type="checkbox" 
+                  id="isUnbudgeted"
+                  className="w-5 h-5 text-amber-600 border-amber-300 rounded focus:ring-amber-500"
+                  checked={invoiceForm.isUnbudgeted || false}
+                  onChange={e => setInvoiceForm({ ...invoiceForm, isUnbudgeted: e.target.checked })}
+                />
+                <label htmlFor="isUnbudgeted" className="text-sm font-black text-amber-900 uppercase tracking-wider cursor-pointer">Unbudgeted Expense</label>
+              </div>
+              {invoiceForm.isUnbudgeted && (
+                <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <label className="text-xs font-black text-amber-700 uppercase tracking-wider">Justification (Mandatory)</label>
+                  <textarea 
+                    className="w-full bg-white border border-amber-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-amber-500 outline-none font-medium text-sm"
+                    placeholder="Provide justification for emergency/unplanned spend..."
+                    value={invoiceForm.unbudgetedJustification || ''}
+                    onChange={e => setInvoiceForm({ ...invoiceForm, unbudgetedJustification: e.target.value })}
+                  />
+                </div>
+              )}
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <MultiSelect 
+                label="Centers"
+                options={CENTERS}
+                selected={invoiceForm.centerNames || []}
+                onChange={centers => setInvoiceForm({ ...invoiceForm, centerNames: centers })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-black text-slate-500 uppercase tracking-wider">TDS %</label>
+              <select 
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                value={invoiceForm.tds}
+                onChange={e => setInvoiceForm({ ...invoiceForm, tds: Number(e.target.value) })}
+              >
+                <option value="0">Select TDS</option>
+                {masters.TDS.map(t => <option key={t.id} value={t.rate}>{t.name}</option>)}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-black text-slate-500 uppercase tracking-wider">GST %</label>
+              <select 
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                value={invoiceForm.gst}
+                onChange={e => setInvoiceForm({ ...invoiceForm, gst: Number(e.target.value) })}
+              >
+                <option value="0">Select GST</option>
+                {masters.GST.map(g => <option key={g.id} value={g.rate}>{g.name}</option>)}
+              </select>
+            </div>
+
+            {/* Items Section */}
+            <div className="col-span-2 space-y-4">
+              <div className="flex justify-between items-center">
+                <h4 className="text-sm font-black text-slate-700 uppercase tracking-wider">Invoice Items</h4>
+                <div className="flex items-center space-x-4">
+                  <button 
+                    onClick={downloadTemplate}
+                    className="text-indigo-600 text-xs font-black hover:underline flex items-center"
+                  >
+                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                    Download Template
+                  </button>
+                  <label className="cursor-pointer text-indigo-600 text-xs font-black hover:underline flex items-center">
+                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                    Bulk Upload
+                    <input type="file" className="hidden" onChange={handleBulkUpload} />
+                  </label>
+                  <button onClick={addItem} className="text-indigo-600 text-xs font-black hover:underline">+ Add Item</button>
+                </div>
+              </div>
+              <div className="space-y-4">
+                {invoiceForm.items?.map((item: any) => (
+                  <div key={item.id} className="bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-4">
+                    <div className="grid grid-cols-12 gap-4 items-end">
+                      <div className="col-span-2 space-y-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Item Name</label>
+                        <select 
+                          className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                          value={item.itemName}
+                          onChange={e => updateItem(item.id, 'itemName', e.target.value)}
+                        >
+                          <option value="">Select Item</option>
+                          {masters.Item.filter(i => !invoiceForm.items?.some((selected: any) => selected.id !== item.id && selected.itemName === i.name)).map(i => <option key={i.id} value={i.name}>{i.name}</option>)}
+                        </select>
+                      </div>
+                      <div className="col-span-2 space-y-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">GL Code</label>
+                        <select 
+                          className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                          value={item.coaCode}
+                          onChange={e => updateItem(item.id, 'coaCode', e.target.value)}
+                        >
+                          <option value="">Select GL</option>
+                          {masters.COA.map(coa => <option key={coa.id} value={coa.code}>{coa.code}</option>)}
+                        </select>
+                      </div>
+                      <div className="col-span-2 space-y-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Rate (INR)</label>
+                        <input 
+                          type="number"
+                          className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                          value={item.rate}
+                          onChange={e => updateItem(item.id, 'rate', Number(e.target.value))}
+                        />
+                      </div>
+                      <div className="col-span-1 space-y-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Qty</label>
+                        <input 
+                          type="number"
+                          className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                          value={item.quantity}
+                          onChange={e => updateItem(item.id, 'quantity', Number(e.target.value))}
+                        />
+                      </div>
+                      <div className="col-span-2 space-y-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Base Amount</label>
+                        <input 
+                          type="number"
+                          readOnly
+                          className="w-full bg-slate-100 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-black text-slate-600"
+                          value={item.amount?.toFixed(2)}
+                        />
+                      </div>
+                      <div className="col-span-3 space-y-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Remarks <span className="text-red-500">*</span></label>
+                        <input 
+                          type="text"
+                          placeholder="Remarks"
+                          className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                          value={item.remarks}
+                          onChange={e => updateItem(item.id, 'remarks', e.target.value)}
+                        />
+                      </div>
+                      <div className="col-span-1 flex justify-center pb-1">
+                        {invoiceForm.items.length > 1 && (
+                          <button onClick={() => removeItem(item.id)} className="text-red-400 hover:text-red-600 transition-colors p-2 hover:bg-red-50 rounded-xl">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Summary Section */}
+              <div className="bg-slate-50 p-6 rounded-3xl border border-slate-200 mt-6 space-y-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Base Amount</label>
+                    <div className="text-sm font-bold text-slate-700">₹{(invoiceForm.items || []).reduce((sum: number, i: any) => sum + (i.amount || 0), 0).toFixed(2)}</div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total TDS</label>
+                    <div className="text-sm font-bold text-red-500">-₹{(invoiceForm.items || []).reduce((sum: number, i: any) => sum + (i.tdsAmount || 0), 0).toFixed(2)}</div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total GST</label>
+                    <div className="text-sm font-bold text-emerald-500">+₹{(invoiceForm.items || []).reduce((sum: number, i: any) => sum + (i.gstAmount || 0), 0).toFixed(2)}</div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Net Amount</label>
+                    <div className="text-lg font-black text-indigo-700">₹{invoiceForm.amount?.toFixed(2)}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2 md:col-span-2">
+              <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Remarks</label>
+              <textarea 
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                value={invoiceForm.remarks}
+                onChange={e => setInvoiceForm({ ...invoiceForm, remarks: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-2 md:col-span-2">
+              <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Attachments</label>
+              <div className="flex items-center space-x-4">
+                <label className="cursor-pointer bg-white border-2 border-dashed border-slate-200 rounded-xl px-6 py-4 flex-1 flex flex-col items-center justify-center hover:border-indigo-300 transition-colors">
+                  <svg className="w-8 h-8 text-slate-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                  <span className="text-xs font-bold text-slate-400">Click to upload invoice copy</span>
+                  <input type="file" className="hidden" onChange={handleFileUpload} />
+                </label>
+                {invoiceForm.attachments?.length > 0 && (
+                  <div className="flex-1 space-y-2">
+                    {invoiceForm.attachments.map((att: Attachment) => (
+                      <div key={att.id} className="flex items-center justify-between bg-slate-50 px-3 py-2 rounded-lg border border-slate-100">
+                        <span className="text-xs font-bold text-slate-600 truncate max-w-[150px]">{att.name}</span>
+                        <button onClick={() => setInvoiceForm((prev: any) => ({ ...prev, attachments: prev.attachments.filter((a: any) => a.id !== att.id) }))} className="text-red-400 hover:text-red-600">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-8 flex justify-end space-x-4">
+            <button onClick={() => { setShowForm(false); resetForm(); }} className="px-6 py-3 rounded-xl font-black text-slate-500 hover:bg-slate-50 transition-colors">Cancel</button>
+            <button 
+              onClick={handleCreateInvoice}
+              className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-black shadow-lg shadow-indigo-200 hover:scale-105 transition-transform"
+            >
+              Submit Invoice
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-100">
+                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Invoice ID</th>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Vendor</th>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Date</th>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Amount</th>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</th>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {invoices.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-12 text-center text-slate-400 font-medium italic">No direct invoices found. Create one to get started.</td>
+                </tr>
+              ) : (
+                invoices.map(inv => (
+                  <tr key={inv.id} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="px-6 py-4 font-black text-slate-700">{inv.id}</td>
+                    <td className="px-6 py-4 font-bold text-slate-600">{masters.Vendor.find(v => v.id === (inv as any).vendorId)?.name || 'Unknown'}</td>
+                    <td className="px-6 py-4 text-slate-500 font-medium">{new Date(inv.createdAt).toLocaleDateString()}</td>
+                    <td className="px-6 py-4 font-black text-indigo-600">₹{inv.amount.toFixed(2)}</td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col space-y-1">
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider w-fit ${
+                          inv.status === 'Approved' ? 'bg-emerald-100 text-emerald-600' : 
+                          inv.status === 'Budget Hold' ? 'bg-rose-100 text-rose-700' :
+                          'bg-amber-100 text-amber-600'
+                        }`}>
+                          {inv.status}
+                        </span>
+                        {inv.status === 'Pending' && (
+                          <div className="text-[10px] font-bold text-slate-400">
+                            Step {inv.currentStepIndex + 1}
+                          </div>
+                        )}
+                        {(inv as any).isUnbudgeted && (
+                          <span className="px-2 py-0.5 bg-amber-50 text-amber-600 text-[8px] font-black uppercase border border-amber-200 rounded w-fit">
+                            Unbudgeted
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col space-y-2">
+                        <div className="flex space-x-2">
+                          {canCompleteReview(inv) && (
+                            <button 
+                              onClick={() => completeReviewInvoice(inv.id)}
+                              className="text-amber-600 text-xs font-black hover:underline"
+                            >
+                              Complete Review
+                            </button>
+                          )}
+                          {canApprove(inv) && (
+                            <button 
+                              onClick={() => approveInvoice(inv.id)}
+                              className="text-indigo-600 text-xs font-black hover:underline"
+                            >
+                              Approve
+                            </button>
+                          )}
+                          {inv.status === 'Approved' && (
+                            <button 
+                              onClick={() => reverseInvoice(inv.id)}
+                              className="text-rose-600 text-xs font-black hover:underline"
+                            >
+                              Reverse
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Budget Visibility during Approval */}
+                        {inv.status === 'Pending' && !(inv as any).isUnbudgeted && (
+                          <div className="bg-slate-50 p-2 rounded-lg border border-slate-200 space-y-1 mt-1">
+                            <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Budget Check</div>
+                            {inv.items.map((item, idx) => {
+                              const budget = budgets.find(b => b.coaCode === item.coaCode);
+                              if (!budget) return null;
+                              const balance = budget.amount - budget.consumedAmount;
+                              const isExceeded = (item.totalAmount || item.amount) > balance;
+                              return (
+                                <div key={idx} className="flex justify-between items-center text-[9px]">
+                                  <span className="font-bold text-slate-600">{item.coaCode}:</span>
+                                  <span className={`font-black ${isExceeded ? 'text-rose-500' : 'text-emerald-600'}`}>
+                                    Bal: ₹{balance.toLocaleString()}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default DirectInvoiceModule;

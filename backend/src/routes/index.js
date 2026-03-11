@@ -111,6 +111,7 @@ router.get('/workflows', async (req, res) => {
 });
 router.post('/workflows', async (req, res) => {
   try {
+    await query('DELETE FROM workflows');
     await buildUpsert('workflows', 'id', WORKFLOWS_COLS, req.body);
     const rows = await getAll('workflows');
     res.json(rows);

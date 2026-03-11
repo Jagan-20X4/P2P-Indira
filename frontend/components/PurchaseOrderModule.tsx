@@ -1099,7 +1099,7 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
                     <div className="text-xs"><span className="text-indigo-400 uppercase font-black">Entity:</span> {masters.Entity.find(e => e.id === selectedPO.entityId)?.name}</div>
                     <div className="text-xs"><span className="text-indigo-400 uppercase font-black">Vendor:</span> {masters.Vendor.find(v => v.id === selectedPO.vendorId)?.name}</div>
                     <div className="text-xs"><span className="text-indigo-400 uppercase font-black">Vendor Site:</span> {masters['Vendor Site']?.find(s => s.id === selectedPO.vendorSiteId)?.name || 'N/A'}</div>
-                    <div className="text-xs"><span className="text-indigo-400 uppercase font-black">Centers:</span> {selectedPO.centerNames.join(', ')}</div>
+                    <div className="text-xs"><span className="text-indigo-400 uppercase font-black">Centers:</span> {(selectedPO.centerNames || []).join(', ')}</div>
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -1149,7 +1149,7 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
                     onChange={e => setGrnForm({ ...grnForm, location: e.target.value })}
                   >
                     <option value="">Select Location</option>
-                    {selectedPO.centerNames.map(c => <option key={c} value={c}>{c}</option>)}
+                    {(selectedPO.centerNames || []).map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
                 <div className="space-y-2">
@@ -1181,7 +1181,7 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
                     </div>
                   </div>
                   <div className="space-y-3">
-                    {selectedPO.items.map((poItem) => {
+                    {(selectedPO.items || []).map((poItem) => {
                       const grnItem = grnForm.items?.find(i => i.id === poItem.id) || { ...poItem, quantity: 0, amount: 0 };
                       return (
                         <div key={poItem.id} className="grid grid-cols-12 gap-4 items-end bg-slate-50 p-4 rounded-2xl border border-slate-100">
@@ -1509,7 +1509,25 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
                         {po.status === 'Approved' && (
                           <>
                             <button 
-                              onClick={() => { setSelectedPO(po); setShowForm(true); }}
+                              onClick={() => {
+                                setSelectedPO(po);
+                                setGrnForm({
+                                  entityName: po.entityName,
+                                  purchaseOrderId: po.id,
+                                  vendorSiteId: po.vendorSiteId || '',
+                                  shippingAddressId: po.shippingAddressId || '',
+                                  billingAddressId: po.billingAddressId || '',
+                                  location: (po.centerNames && po.centerNames[0]) || '',
+                                  department: po.department || '',
+                                  subDepartment: po.subDepartment || '',
+                                  remarks: po.remarks || '',
+                                  invoiceNumber: '',
+                                  items: (po.items || []).map(item => ({ ...item, quantity: 0, amount: 0 })),
+                                  amount: 0,
+                                  attachments: []
+                                });
+                                setShowForm(true);
+                              }}
                               className="text-xs font-black text-indigo-600 hover:underline"
                             >
                               Create GRN

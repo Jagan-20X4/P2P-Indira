@@ -328,8 +328,8 @@ const DirectInvoiceModule: React.FC<DirectInvoiceModuleProps> = ({ masters, curr
       w.moduleType === ModuleType.DIRECT_INVOICE &&
       w.subDepartment === doc.subDepartment &&
       (!w.centerName || (doc as any).centerNames?.includes(w.centerName) || doc.location === w.centerName) &&
-      doc.amount >= w.minAmount && 
-      (w.maxAmount === null || doc.amount <= w.maxAmount)
+      Number(doc.amount) >= Number(w.minAmount) && 
+      (w.maxAmount == null || Number(doc.amount) <= Number(w.maxAmount))
     );
 
     if (!rule) {
@@ -351,8 +351,8 @@ const DirectInvoiceModule: React.FC<DirectInvoiceModuleProps> = ({ masters, curr
       w.moduleType === ModuleType.DIRECT_INVOICE &&
       w.subDepartment === doc.subDepartment &&
       (!w.centerName || (doc as any).centerNames?.includes(w.centerName) || doc.location === w.centerName) &&
-      doc.amount >= w.minAmount &&
-      (w.maxAmount === null || doc.amount <= w.maxAmount)
+      Number(doc.amount) >= Number(w.minAmount) &&
+      (w.maxAmount == null || Number(doc.amount) <= Number(w.maxAmount))
     );
     if (!rule) return false;
     const currentStep = rule.approvalChain[doc.currentStepIndex];
@@ -368,8 +368,8 @@ const DirectInvoiceModule: React.FC<DirectInvoiceModuleProps> = ({ masters, curr
         w.moduleType === ModuleType.DIRECT_INVOICE &&
         w.subDepartment === inv.subDepartment &&
         (!w.centerName || (inv as any).centerNames?.includes(w.centerName) || inv.location === w.centerName) &&
-        inv.amount >= w.minAmount &&
-        (w.maxAmount === null || inv.amount <= w.maxAmount)
+        Number(inv.amount) >= Number(w.minAmount) &&
+        (w.maxAmount == null || Number(inv.amount) <= Number(w.maxAmount))
       );
       if (!rule || inv.currentStepIndex >= rule.approvalChain.length - 1) return inv;
       return { ...inv, currentStepIndex: inv.currentStepIndex + 1 };
@@ -385,8 +385,8 @@ const DirectInvoiceModule: React.FC<DirectInvoiceModuleProps> = ({ masters, curr
         w.moduleType === ModuleType.DIRECT_INVOICE &&
         w.subDepartment === inv.subDepartment &&
         (!w.centerName || (inv as any).centerNames?.includes(w.centerName) || inv.location === w.centerName) &&
-        inv.amount >= w.minAmount && 
-        (w.maxAmount === null || inv.amount <= w.maxAmount)
+        Number(inv.amount) >= Number(w.minAmount) && 
+        (w.maxAmount == null || Number(inv.amount) <= Number(w.maxAmount))
       );
 
       if (!rule || inv.currentStepIndex >= rule.approvalChain.length - 1) {
@@ -637,16 +637,14 @@ const DirectInvoiceModule: React.FC<DirectInvoiceModuleProps> = ({ masters, curr
                           {masters.Item.filter(i => !invoiceForm.items?.some((selected: any) => selected.id !== item.id && selected.itemName === i.name)).map(i => <option key={i.id} value={i.name}>{i.name}</option>)}
                         </select>
                       </div>
-                      <div className="col-span-2 space-y-1">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">GL Code</label>
-                        <select 
+                      <div className="col-span-1 space-y-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Qty</label>
+                        <input 
+                          type="number"
                           className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
-                          value={item.coaCode}
-                          onChange={e => updateItem(item.id, 'coaCode', e.target.value)}
-                        >
-                          <option value="">Select GL</option>
-                          {masters.COA.map(coa => <option key={coa.id} value={coa.code}>{coa.code}</option>)}
-                        </select>
+                          value={item.quantity}
+                          onChange={e => updateItem(item.id, 'quantity', Number(e.target.value))}
+                        />
                       </div>
                       <div className="col-span-2 space-y-1">
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Rate (INR)</label>
@@ -655,15 +653,6 @@ const DirectInvoiceModule: React.FC<DirectInvoiceModuleProps> = ({ masters, curr
                           className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
                           value={item.rate}
                           onChange={e => updateItem(item.id, 'rate', Number(e.target.value))}
-                        />
-                      </div>
-                      <div className="col-span-1 space-y-1">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Qty</label>
-                        <input 
-                          type="number"
-                          className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
-                          value={item.quantity}
-                          onChange={e => updateItem(item.id, 'quantity', Number(e.target.value))}
                         />
                       </div>
                       <div className="col-span-2 space-y-1">

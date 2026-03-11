@@ -8,7 +8,8 @@ export enum ModuleType {
   GRN = 'Goods Receipt Note (GRN)',
   INVOICE_GRN = 'Invoice against GRN',
   DIRECT_INVOICE = 'Direct Invoice',
-  BUDGET = 'Budget'
+  BUDGET = 'Budget',
+  MASTERS = 'Masters Control'
 }
 
 export type Permission = 'create' | 'edit' | 'view' | 'delete';
@@ -17,6 +18,10 @@ export interface Role {
   id: string;
   name: string;
   permissions: Record<ModuleType, Permission[]>;
+  /** When set, only these master sub-modules are visible inside Masters Control. Empty/undefined = all. @deprecated Prefer mastersPermissions. */
+  allowedMasterTypes?: MasterType[];
+  /** Per master sub-module permissions (create, edit, view, delete). When present, used for Masters Control granular access. */
+  mastersPermissions?: Partial<Record<MasterType, Permission[]>>;
   isActive: boolean;
 }
 
@@ -120,6 +125,10 @@ export interface ItemLine {
   igst?: number;
   totalAmount?: number; // amount + gstAmount - tdsAmount
   centerName?: string;
+  /** Multiple centers per line. */
+  centerNames?: string[];
+  /** Centers set at RC creation; after approval these cannot be removed, only more can be added. */
+  centerNamesLocked?: string[];
   coaCode?: string;
   remarks: string;
 }

@@ -10,7 +10,7 @@ router.get('/health', (req, res) => {
 // JSON columns that may be stored as TEXT/JSON (not JSONB) and need parsing after retrieval
 const JSON_COLUMNS = {
   workflows: ['approvalChain'],
-  roles: ['permissions'],
+  roles: ['permissions', 'allowedMasterTypes', 'mastersPermissions'],
   users: ['centerNames', 'departments', 'subDepartments', 'entityNames', 'roleIds'],
   purchase_requests: ['centerNames', 'items', 'attachments'],
   rate_contracts: ['items', 'attachments'],
@@ -60,7 +60,7 @@ function buildUpsert(table, pk, columns, body) {
 }
 
 // --- ROLES ---
-const ROLES_COLS = ['id', 'name', 'is_active', 'permissions'];
+const ROLES_COLS = ['id', 'name', 'is_active', 'permissions', 'allowed_master_types', 'masters_permissions'];
 router.get('/roles', async (req, res) => {
   try {
     const rows = await getAll('roles');

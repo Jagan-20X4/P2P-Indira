@@ -180,8 +180,8 @@ const PurchaseRequestModule: React.FC<PurchaseRequestModuleProps> = ({
       w.moduleType === ModuleType.PR &&
       w.subDepartment === pr.subDepartment &&
       (!w.centerName || pr.centerNames.includes(w.centerName)) &&
-      pr.amount >= w.minAmount && 
-      (w.maxAmount === null || pr.amount <= w.maxAmount)
+      Number(pr.amount) >= Number(w.minAmount) && 
+      (w.maxAmount == null || Number(pr.amount) <= Number(w.maxAmount))
     );
 
     if (!rule) {
@@ -203,8 +203,8 @@ const PurchaseRequestModule: React.FC<PurchaseRequestModuleProps> = ({
       w.moduleType === ModuleType.PR &&
       w.subDepartment === pr.subDepartment &&
       (!w.centerName || pr.centerNames.includes(w.centerName)) &&
-      pr.amount >= w.minAmount && 
-      (w.maxAmount === null || pr.amount <= w.maxAmount)
+      Number(pr.amount) >= Number(w.minAmount) && 
+      (w.maxAmount == null || Number(pr.amount) <= Number(w.maxAmount))
     );
     if (!rule || rule.approvalChain.length === 0) return false;
     const currentStep = rule.approvalChain[pr.currentStepIndex];
@@ -220,8 +220,8 @@ const PurchaseRequestModule: React.FC<PurchaseRequestModuleProps> = ({
         w.moduleType === ModuleType.PR &&
         w.subDepartment === pr.subDepartment &&
         (!w.centerName || pr.centerNames.includes(w.centerName)) &&
-        pr.amount >= w.minAmount && 
-        (w.maxAmount === null || pr.amount <= w.maxAmount)
+        Number(pr.amount) >= Number(w.minAmount) && 
+        (w.maxAmount == null || Number(pr.amount) <= Number(w.maxAmount))
       );
       if (!rule || pr.currentStepIndex >= rule.approvalChain.length - 1) return pr;
       return { ...pr, currentStepIndex: pr.currentStepIndex + 1 };
@@ -237,8 +237,8 @@ const PurchaseRequestModule: React.FC<PurchaseRequestModuleProps> = ({
         w.moduleType === ModuleType.PR &&
         w.subDepartment === pr.subDepartment &&
         (!w.centerName || pr.centerNames.includes(w.centerName)) &&
-        pr.amount >= w.minAmount && 
-        (w.maxAmount === null || pr.amount <= w.maxAmount)
+        Number(pr.amount) >= Number(w.minAmount) && 
+        (w.maxAmount == null || Number(pr.amount) <= Number(w.maxAmount))
       );
 
       if (!rule || pr.currentStepIndex >= rule.approvalChain.length - 1) {

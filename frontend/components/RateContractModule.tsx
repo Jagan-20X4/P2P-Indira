@@ -29,6 +29,7 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
   const [viewMode, setViewMode] = useState<ViewMode>('RC');
   
   const [showForm, setShowForm] = useState(false);
+  const [updateSuccessMessage, setUpdateSuccessMessage] = useState(false);
   const [selectedRC, setSelectedRC] = useState<RateContract | null>(null);
   const [selectedGRN, setSelectedGRN] = useState<GRN | null>(null);
 
@@ -116,16 +117,17 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
       return {
         ...prev,
         items: (prev.items || []).map(item => {
-          if (item.id === id) {
-            const updated = { ...item, [field]: value };
-            if (field === 'quantity' || field === 'rate') {
-              const qty = updated.quantity || 0;
-              const rate = updated.rate || 0;
-              updated.amount = qty * rate;
-            }
-            return updated;
+          if (item.id !== id) return item;
+          const updated = { ...item, [field]: value };
+          if (field === 'centerNames') {
+            updated.centerName = Array.isArray(value) && value.length > 0 ? value[0] : undefined;
           }
-          return item;
+          if (field === 'quantity' || field === 'rate') {
+            const qty = updated.quantity || 0;
+            const rate = updated.rate || 0;
+            updated.amount = qty * rate;
+          }
+          return updated;
         })
       };
     });
@@ -187,18 +189,25 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
       alert('Please fill all mandatory header fields.');
       return;
     }
-    if ((rcForm.items || []).some(i => !i.itemName || !i.remarks || !i.centerName)) {
+    if ((rcForm.items || []).some(i => !i.itemName || !i.remarks || (!(i.centerNames?.length) && !i.centerName))) {
       alert('Item Name, Center, and Remarks are mandatory for all item lines.');
       return;
     }
 
+    const itemsWithLocked = (rcForm.items || []).map(item => ({
+      ...item,
+      centerNames: getItemCenters(item),
+      centerNamesLocked: getItemCenters(item),
+      centerName: getItemCenters(item)[0]
+    }));
     const newRC: RateContract = {
       ...rcForm as RateContract,
       id: `RC-${Math.floor(Math.random() * 10000)}`,
       status: 'Pending',
       currentStepIndex: 0,
       createdAt: new Date().toISOString(),
-      attachments: rcForm.attachments || []
+      attachments: rcForm.attachments || [],
+      items: itemsWithLocked
     };
     setRateContracts([...rateContracts, newRC]);
     setShowForm(false);
@@ -290,9 +299,9 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
       w.entityName === doc.entityName &&
       w.moduleType === moduleType &&
       w.subDepartment === doc.subDepartment &&
-      (!w.centerName || (doc as any).items?.some((i: any) => i.centerName === w.centerName) || (doc as any).location === w.centerName) &&
-      doc.amount >= w.minAmount && 
-      (w.maxAmount === null || doc.amount <= w.maxAmount)
+      (!w.centerName || (doc as any).items?.some((i: any) => ((i.centerNames?.length ? i.centerNames : (i.centerName ? [i.centerName] : [])).includes(w.centerName))) || (doc as any).location === w.centerName) &&
+      Number(doc.amount) >= Number(w.minAmount) && 
+      (w.maxAmount == null || Number(doc.amount) <= Number(w.maxAmount))
     );
 
     if (!rule) {
@@ -321,9 +330,9 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
       w.entityName === doc.entityName &&
       w.moduleType === moduleType &&
       w.subDepartment === doc.subDepartment &&
-      (!w.centerName || (doc as any).items?.some((i: any) => i.centerName === w.centerName) || (doc as any).location === w.centerName) &&
-      doc.amount >= w.minAmount &&
-      (w.maxAmount === null || doc.amount <= w.maxAmount)
+      (!w.centerName || (doc as any).items?.some((i: any) => ((i.centerNames?.length ? i.centerNames : (i.centerName ? [i.centerName] : [])).includes(w.centerName))) || (doc as any).location === w.centerName) &&
+      Number(doc.amount) >= Number(w.minAmount) &&
+      (w.maxAmount == null || Number(doc.amount) <= Number(w.maxAmount))
     );
     if (!rule) return false;
     const currentStep = rule.approvalChain[doc.currentStepIndex];
@@ -338,9 +347,9 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
         w.entityName === rc.entityName &&
         w.moduleType === ModuleType.RATE_CONTRACT &&
         w.subDepartment === rc.subDepartment &&
-        (!w.centerName || rc.items.some(i => i.centerName === w.centerName)) &&
-        rc.amount >= w.minAmount &&
-        (w.maxAmount === null || rc.amount <= w.maxAmount)
+        (!w.centerName || rc.items.some(i => getItemCenters(i).includes(w.centerName))) &&
+        Number(rc.amount) >= Number(w.minAmount) &&
+        (w.maxAmount == null || Number(rc.amount) <= Number(w.maxAmount))
       );
       if (!rule || rc.currentStepIndex >= rule.approvalChain.length - 1) return rc;
       return { ...rc, currentStepIndex: rc.currentStepIndex + 1 };
@@ -355,8 +364,8 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
         w.moduleType === ModuleType.GRN &&
         w.subDepartment === grn.subDepartment &&
         (!w.centerName || grn.location === w.centerName) &&
-        grn.amount >= w.minAmount &&
-        (w.maxAmount === null || grn.amount <= w.maxAmount)
+        Number(grn.amount) >= Number(w.minAmount) &&
+        (w.maxAmount == null || Number(grn.amount) <= Number(w.maxAmount))
       );
       if (!rule || grn.currentStepIndex >= rule.approvalChain.length - 1) return grn;
       return { ...grn, currentStepIndex: grn.currentStepIndex + 1 };
@@ -371,8 +380,8 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
         w.moduleType === ModuleType.INVOICE_GRN &&
         w.subDepartment === inv.subDepartment &&
         (!w.centerName || inv.location === w.centerName) &&
-        inv.amount >= w.minAmount &&
-        (w.maxAmount === null || inv.amount <= w.maxAmount)
+        Number(inv.amount) >= Number(w.minAmount) &&
+        (w.maxAmount == null || Number(inv.amount) <= Number(w.maxAmount))
       );
       if (!rule || inv.currentStepIndex >= rule.approvalChain.length - 1) return inv;
       return { ...inv, currentStepIndex: inv.currentStepIndex + 1 };
@@ -409,9 +418,9 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
         w.entityName === rc.entityName &&
         w.moduleType === ModuleType.RATE_CONTRACT &&
         w.subDepartment === rc.subDepartment &&
-        (!w.centerName || rc.items.some(i => i.centerName === w.centerName)) &&
-        rc.amount >= w.minAmount && 
-        (w.maxAmount === null || rc.amount <= w.maxAmount)
+        (!w.centerName || rc.items.some(i => getItemCenters(i).includes(w.centerName))) &&
+        Number(rc.amount) >= Number(w.minAmount) && 
+        (w.maxAmount == null || Number(rc.amount) <= Number(w.maxAmount))
       );
 
       if (!rule || rc.currentStepIndex >= rule.approvalChain.length - 1) {
@@ -436,8 +445,8 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
         w.moduleType === ModuleType.GRN &&
         w.subDepartment === grn.subDepartment &&
         (!w.centerName || grn.location === w.centerName) &&
-        grn.amount >= w.minAmount && 
-        (w.maxAmount === null || grn.amount <= w.maxAmount)
+        Number(grn.amount) >= Number(w.minAmount) && 
+        (w.maxAmount == null || Number(grn.amount) <= Number(w.maxAmount))
       );
 
       if (!rule || grn.currentStepIndex >= rule.approvalChain.length - 1) {
@@ -462,8 +471,8 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
         w.moduleType === ModuleType.INVOICE_GRN &&
         w.subDepartment === inv.subDepartment &&
         (!w.centerName || inv.location === w.centerName) &&
-        inv.amount >= w.minAmount && 
-        (w.maxAmount === null || inv.amount <= w.maxAmount)
+        Number(inv.amount) >= Number(w.minAmount) && 
+        (w.maxAmount == null || Number(inv.amount) <= Number(w.maxAmount))
       );
 
       if (!rule || inv.currentStepIndex >= rule.approvalChain.length - 1) {
@@ -482,6 +491,44 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
   const isRcReadOnly = !!rcForm.id && !(rcForm.status === 'Rejected' && rcForm.createdBy === currentUser.id);
   const isGrnReadOnly = !!grnForm.id && !(grnForm.status === 'Rejected' && grnForm.createdBy === currentUser.id);
   const isInvoiceReadOnly = !!invoiceForm.id && !(invoiceForm.status === 'Rejected' && invoiceForm.createdBy === currentUser.id);
+  const isApprovedRcView = !!(rcForm.id && rcForm.status === 'Approved');
+
+  const getItemCenters = (item: ItemLine): string[] =>
+    (item.centerNames && item.centerNames.length > 0) ? item.centerNames : (item.centerName ? [item.centerName] : []);
+
+  const normalizeRcForForm = (rc: RateContract): RateContract => ({
+    ...rc,
+    items: (rc.items || []).map(item => {
+      const centers = item.centerNames?.length ? item.centerNames : (item.centerName ? [item.centerName] : []);
+      const locked = item.centerNamesLocked?.length ? item.centerNamesLocked : centers;
+      return {
+        ...item,
+        centerNames: centers,
+        centerNamesLocked: locked
+      };
+    })
+  });
+
+  const handleUpdateApprovedRcCenters = () => {
+    if (!rcForm.id) return;
+    const items = (rcForm.items || []).map(item => {
+      const centers = getItemCenters(item);
+      return {
+        ...item,
+        centerNames: centers,
+        centerNamesLocked: centers,
+        centerName: centers[0]
+      };
+    });
+    setRateContracts(prev => prev.map(rc => rc.id === rcForm.id ? { ...rc, items } : rc));
+    setRcForm(prev => prev.items ? { ...prev, items } : prev);
+    setUpdateSuccessMessage(true);
+    setTimeout(() => {
+      setShowForm(false);
+      resetForms();
+      setUpdateSuccessMessage(false);
+    }, 2000);
+  };
 
   return (
     <div className="space-y-6">
@@ -523,10 +570,17 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                selectedRC ? (selectedGRN ? 'New Invoice' : 'New GRN') : 
                'New Rate Contract'}
             </h3>
-            <button onClick={() => { setShowForm(false); resetForms(); }} className="text-slate-400 hover:text-slate-600">
+            <button onClick={() => { setShowForm(false); resetForms(); setUpdateSuccessMessage(false); }} className="text-slate-400 hover:text-slate-600">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
           </div>
+
+          {updateSuccessMessage && (
+            <div className="mb-6 p-4 rounded-xl bg-emerald-100 border border-emerald-200 text-emerald-800 font-semibold flex items-center gap-2">
+              <svg className="w-5 h-5 flex-shrink-0 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
+              <span>Rate contract centers updated. Returning to list...</span>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* RC Form Fields */}
@@ -692,26 +746,31 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                 <div className="col-span-2 space-y-4">
                   <div className="flex justify-between items-center">
                     <h4 className="text-sm font-black text-slate-700 uppercase tracking-wider">Items</h4>
-                    <div className="flex items-center space-x-4">
-                      <button 
-                        onClick={() => downloadTemplate('RC')}
-                        className="text-indigo-600 text-xs font-black hover:underline flex items-center"
-                      >
-                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                        Download Template
-                      </button>
-                      <label className="cursor-pointer text-indigo-600 text-xs font-black hover:underline flex items-center">
-                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-                        Bulk Upload
-                        <input type="file" className="hidden" onChange={e => handleBulkUpload(e, 'RC')} />
-                      </label>
-                      <button 
-                        onClick={addItem}
-                        className="text-indigo-600 text-xs font-black hover:underline"
-                      >
-                        + Add Item
-                      </button>
-                    </div>
+                    {!isApprovedRcView && (
+                      <div className="flex items-center space-x-4">
+                        <button 
+                          onClick={() => downloadTemplate('RC')}
+                          className="text-indigo-600 text-xs font-black hover:underline flex items-center"
+                        >
+                          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                          Download Template
+                        </button>
+                        <label className="cursor-pointer text-indigo-600 text-xs font-black hover:underline flex items-center">
+                          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                          Bulk Upload
+                          <input type="file" className="hidden" onChange={e => handleBulkUpload(e, 'RC')} />
+                        </label>
+                        <button 
+                          onClick={addItem}
+                          className="text-indigo-600 text-xs font-black hover:underline"
+                        >
+                          + Add Item
+                        </button>
+                      </div>
+                    )}
+                    {isApprovedRcView && (
+                      <p className="text-xs text-slate-500 font-medium">Only Center can be edited. Use Update below to save.</p>
+                    )}
                   </div>
                   <div className="space-y-6">
                     {rcForm.items?.map((item, index) => (
@@ -720,9 +779,10 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                           <div className="col-span-2 space-y-1">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Item Name</label>
                             <select 
-                              className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                              className={`w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold ${isApprovedRcView ? 'bg-slate-100 cursor-not-allowed' : 'bg-white'}`}
                               value={item.itemName}
                               onChange={e => updateItem(item.id, 'itemName', e.target.value)}
+                              disabled={isApprovedRcView}
                             >
                               <option value="">Select Item</option>
                               {(masters['Item'] || []).filter(i => !rcForm.items?.some(selected => selected.id !== item.id && selected.itemName === i.name)).map(i => <option key={i.id} value={i.name}>{i.name}</option>)}
@@ -730,31 +790,51 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                           </div>
                           <div className="col-span-2 space-y-1">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Center <span className="text-red-500">*</span></label>
-                            <select 
-                              className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
-                              value={item.centerName}
-                              onChange={e => updateItem(item.id, 'centerName', e.target.value)}
-                            >
-                              <option value="">Select Center</option>
-                              {CENTERS.map(c => <option key={c} value={c}>{c}</option>)}
-                            </select>
+                            {isApprovedRcView ? (
+                              <>
+                                <MultiSelect
+                                  options={CENTERS}
+                                  selected={item.centerNames || (item.centerName ? [item.centerName] : [])}
+                                  onChange={v => {
+                                    const locked = item.centerNamesLocked || [];
+                                    const next = [...new Set([...locked, ...v])];
+                                    updateItem(item.id, 'centerNames', next);
+                                  }}
+                                  placeholder="Select centers (locked ones cannot be removed)"
+                                  label=""
+                                />
+                                {(item.centerNamesLocked?.length ?? 0) > 0 && (
+                                  <p className="text-[10px] text-slate-500 mt-1">Locked at creation (cannot remove): {item.centerNamesLocked!.join(', ')}</p>
+                                )}
+                              </>
+                            ) : (
+                              <MultiSelect
+                                options={CENTERS}
+                                selected={item.centerNames || (item.centerName ? [item.centerName] : [])}
+                                onChange={v => updateItem(item.id, 'centerNames', v)}
+                                placeholder="Select centers"
+                                label=""
+                              />
+                            )}
                           </div>
                           <div className="col-span-2 space-y-1">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Rate (INR)</label>
                             <input 
                               type="number"
-                              className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                              className={`w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold ${isApprovedRcView ? 'bg-slate-100 cursor-not-allowed' : 'bg-white'}`}
                               value={item.rate}
                               onChange={e => updateItem(item.id, 'rate', Number(e.target.value))}
+                              disabled={isApprovedRcView}
                             />
                           </div>
                           <div className="col-span-1 space-y-1">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Qty</label>
                             <input 
                               type="number"
-                              className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                              className={`w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold ${isApprovedRcView ? 'bg-slate-100 cursor-not-allowed' : 'bg-white'}`}
                               value={item.quantity}
                               onChange={e => updateItem(item.id, 'quantity', Number(e.target.value))}
+                              disabled={isApprovedRcView}
                             />
                           </div>
                           <div className="col-span-2 space-y-1">
@@ -771,13 +851,14 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                             <input 
                               type="text"
                               placeholder="Remarks"
-                              className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                              className={`w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold ${isApprovedRcView ? 'bg-slate-100 cursor-not-allowed' : 'bg-white'}`}
                               value={item.remarks}
                               onChange={e => updateItem(item.id, 'remarks', e.target.value)}
+                              disabled={isApprovedRcView}
                             />
                           </div>
                           <div className="col-span-1 flex justify-center pb-1">
-                            {rcForm.items!.length > 1 && (
+                            {rcForm.items!.length > 1 && !isApprovedRcView && (
                               <button onClick={() => removeItem(item.id)} className="text-red-400 hover:text-red-600 transition-colors p-2 hover:bg-red-50 rounded-xl">
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                               </button>
@@ -816,6 +897,18 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                     disabled={isRcReadOnly}
                   />
                 </div>
+
+                {isApprovedRcView && (
+                  <div className="md:col-span-2 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleUpdateApprovedRcCenters}
+                      className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg transition-colors"
+                    >
+                      Update
+                    </button>
+                  </div>
+                )}
               </>
             )}
 
@@ -827,7 +920,7 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                   <div className="mt-2 space-y-1">
                     <div className="text-xs"><span className="text-indigo-400 uppercase font-black">Vendor:</span> {(masters['Vendor'] || []).find(v => v.id === selectedRC.vendorId)?.name}</div>
                     <div className="text-xs"><span className="text-indigo-400 uppercase font-black">Vendor Site:</span> {(masters['Vendor Site'] || []).find(s => s.id === selectedRC.vendorSiteId)?.name || 'N/A'}</div>
-                    <div className="text-xs"><span className="text-indigo-400 uppercase font-black">Centers:</span> {Array.from(new Set(selectedRC.items.map(i => i.centerName))).join(', ')}</div>
+                    <div className="text-xs"><span className="text-indigo-400 uppercase font-black">Centers:</span> {Array.from(new Set(selectedRC.items.flatMap(i => getItemCenters(i)))).join(', ')}</div>
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -881,7 +974,7 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                     disabled={isGrnReadOnly}
                   >
                     <option value="">Select Location</option>
-                    {Array.from(new Set(selectedRC.items.map(i => i.centerName))).map(c => <option key={c} value={c}>{c}</option>)}
+                    {Array.from(new Set(selectedRC.items.flatMap(i => getItemCenters(i)))).map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
                 
@@ -911,7 +1004,7 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                           <div className="col-span-4">
                             <label className="text-[10px] font-black text-slate-400 uppercase">Item</label>
                             <div className="text-sm font-bold text-slate-700">{rcItem.itemName}</div>
-                            <div className="text-[10px] text-indigo-500 font-black">RC Rate: ₹{rcItem.rate} | Center: {rcItem.centerName}</div>
+                            <div className="text-[10px] text-indigo-500 font-black">RC Rate: ₹{rcItem.rate} | Center: {getItemCenters(rcItem).join(', ') || '—'}</div>
                             <div className="text-[10px] text-slate-500 italic mt-1 font-bold">RC Remarks: {rcItem.remarks}</div>
                           </div>
                           <div className="col-span-3 space-y-1">
@@ -1085,7 +1178,7 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                           <div className="col-span-6">
                             <label className="text-[10px] font-black text-slate-400 uppercase">Item</label>
                             <div className="text-sm font-bold text-slate-700">{grnItem.itemName}</div>
-                            <div className="text-[10px] text-emerald-500 font-black">GRN Qty: {grnItem.quantity} | Rate: ₹{grnItem.rate} | Center: {grnItem.centerName}</div>
+                            <div className="text-[10px] text-emerald-500 font-black">GRN Qty: {grnItem.quantity} | Rate: ₹{grnItem.rate} | Center: {getItemCenters(grnItem).join(', ') || '—'}</div>
                             <div className="text-[10px] text-slate-500 italic mt-1 font-bold">RC Remarks: {grnItem.remarks}</div>
                           </div>
                           <div className="col-span-3 space-y-1">
@@ -1215,7 +1308,7 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
 
           <div className="mt-8 flex justify-end space-x-4">
             <button 
-              onClick={() => { setShowForm(false); resetForms(); }}
+              onClick={() => { setShowForm(false); resetForms(); setUpdateSuccessMessage(false); }}
               className="px-6 py-3 rounded-xl font-black text-slate-500 hover:bg-slate-50 transition-colors"
             >
               Cancel
@@ -1293,7 +1386,7 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                   </td>
                   <td className="px-6 py-4">
                     <div className="text-sm font-bold text-slate-700">{(masters['Vendor'] || []).find(v => v.id === rc.vendorId)?.name}</div>
-                    <div className="text-xs text-slate-500">{rc.items.length} Items • {Array.from(new Set(rc.items.map(i => i.centerName))).length} Centers • ₹{(Number(rc.amount) || 0).toFixed(2)}</div>
+                    <div className="text-xs text-slate-500">{rc.items.length} Items • {Array.from(new Set(rc.items.flatMap(i => getItemCenters(i)))).length} Centers • ₹{(Number(rc.amount) || 0).toFixed(2)}</div>
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex flex-col space-y-1">
@@ -1320,7 +1413,7 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                     <div className="flex space-x-2">
                       <button 
                         onClick={() => {
-                          setRcForm(rc);
+                          setRcForm(normalizeRcForForm(rc));
                           setShowForm(true);
                         }}
                         className="text-xs font-black text-slate-600 hover:underline"
@@ -1355,7 +1448,7 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                       {rc.status === 'Rejected' && rc.createdBy === currentUser.id && (
                         <button 
                           onClick={() => {
-                            setRcForm(rc);
+                            setRcForm(normalizeRcForForm(rc));
                             setShowForm(true);
                           }}
                           className="text-xs font-black text-amber-600 hover:underline"

@@ -456,8 +456,8 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
       w.moduleType === moduleType &&
       w.subDepartment === doc.subDepartment &&
       (!w.centerName || (doc as any).centerNames?.includes(w.centerName) || (doc as any).location === w.centerName) &&
-      doc.amount >= w.minAmount && 
-      (w.maxAmount === null || doc.amount <= w.maxAmount)
+      Number(doc.amount) >= Number(w.minAmount) && 
+      (w.maxAmount == null || Number(doc.amount) <= Number(w.maxAmount))
     );
 
     if (!rule) {
@@ -489,8 +489,8 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
       w.moduleType === moduleType &&
       w.subDepartment === doc.subDepartment &&
       (!w.centerName || (doc as any).centerNames?.includes(w.centerName) || (doc as any).location === w.centerName) &&
-      doc.amount >= w.minAmount &&
-      (w.maxAmount === null || doc.amount <= w.maxAmount)
+      Number(doc.amount) >= Number(w.minAmount) &&
+      (w.maxAmount == null || Number(doc.amount) <= Number(w.maxAmount))
     );
     if (!rule || rule.approvalChain.length === 0) return false;
     const currentStep = rule.approvalChain[doc.currentStepIndex];
@@ -506,8 +506,8 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
         w.moduleType === ModuleType.PO &&
         w.subDepartment === po.subDepartment &&
         (!w.centerName || po.centerNames?.includes(w.centerName)) &&
-        po.amount >= w.minAmount &&
-        (w.maxAmount === null || po.amount <= w.maxAmount)
+        Number(po.amount) >= Number(w.minAmount) &&
+        (w.maxAmount == null || Number(po.amount) <= Number(w.maxAmount))
       );
       if (!rule || po.currentStepIndex >= rule.approvalChain.length - 1) return po;
       return { ...po, currentStepIndex: po.currentStepIndex + 1 };
@@ -522,8 +522,8 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
         w.moduleType === ModuleType.GRN &&
         w.subDepartment === grn.subDepartment &&
         (!w.centerName || grn.location === w.centerName) &&
-        grn.amount >= w.minAmount &&
-        (w.maxAmount === null || grn.amount <= w.maxAmount)
+        Number(grn.amount) >= Number(w.minAmount) &&
+        (w.maxAmount == null || Number(grn.amount) <= Number(w.maxAmount))
       );
       if (!rule || grn.currentStepIndex >= rule.approvalChain.length - 1) return grn;
       return { ...grn, currentStepIndex: grn.currentStepIndex + 1 };
@@ -538,8 +538,8 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
         w.moduleType === ModuleType.INVOICE_GRN &&
         w.subDepartment === inv.subDepartment &&
         (!w.centerName || inv.location === w.centerName) &&
-        inv.amount >= w.minAmount &&
-        (w.maxAmount === null || inv.amount <= w.maxAmount)
+        Number(inv.amount) >= Number(w.minAmount) &&
+        (w.maxAmount == null || Number(inv.amount) <= Number(w.maxAmount))
       );
       if (!rule || inv.currentStepIndex >= rule.approvalChain.length - 1) return inv;
       return { ...inv, currentStepIndex: inv.currentStepIndex + 1 };
@@ -555,8 +555,8 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
         w.moduleType === ModuleType.PO &&
         w.subDepartment === po.subDepartment &&
         (!w.centerName || po.centerNames?.includes(w.centerName)) &&
-        po.amount >= w.minAmount && 
-        (w.maxAmount === null || po.amount <= w.maxAmount)
+        Number(po.amount) >= Number(w.minAmount) && 
+        (w.maxAmount == null || Number(po.amount) <= Number(w.maxAmount))
       );
 
       if (!rule || po.currentStepIndex >= rule.approvalChain.length - 1) {
@@ -605,8 +605,8 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
         w.moduleType === ModuleType.GRN &&
         w.subDepartment === grn.subDepartment &&
         (!w.centerName || grn.location === w.centerName) &&
-        grn.amount >= w.minAmount && 
-        (w.maxAmount === null || grn.amount <= w.maxAmount)
+        Number(grn.amount) >= Number(w.minAmount) && 
+        (w.maxAmount == null || Number(grn.amount) <= Number(w.maxAmount))
       );
 
       if (!rule || grn.currentStepIndex >= rule.approvalChain.length - 1) {
@@ -631,8 +631,8 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
         w.moduleType === ModuleType.INVOICE_GRN &&
         w.subDepartment === inv.subDepartment &&
         (!w.centerName || inv.location === w.centerName) &&
-        inv.amount >= w.minAmount && 
-        (w.maxAmount === null || inv.amount <= w.maxAmount)
+        Number(inv.amount) >= Number(w.minAmount) && 
+        (w.maxAmount == null || Number(inv.amount) <= Number(w.maxAmount))
       );
 
       if (!rule || inv.currentStepIndex >= rule.approvalChain.length - 1) {
@@ -1253,7 +1253,7 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
                   <div className="grid grid-cols-3 gap-4 mt-2 text-xs">
                     <div><span className="text-emerald-400 uppercase">Invoice #:</span> {selectedGRN.invoiceNumber}</div>
                     <div><span className="text-emerald-400 uppercase">Qty:</span> {selectedGRN.items.reduce((sum, i) => sum + (i.quantity || 0), 0)}</div>
-                    <div><span className="text-emerald-400 uppercase">Amount:</span> ₹{selectedGRN.amount.toFixed(2)}</div>
+                    <div><span className="text-emerald-400 uppercase">Amount:</span> ₹{(Number(selectedGRN.amount) || 0).toFixed(2)}</div>
                     <div><span className="text-emerald-400 uppercase">Vendor Site:</span> {masters['Vendor Site']?.find(s => s.id === selectedGRN.vendorSiteId)?.name || 'N/A'}</div>
                   </div>
                 </div>
@@ -1471,7 +1471,7 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
                   </td>
                   <td className="px-6 py-4">
                     <div className="text-sm font-bold text-slate-700">{masters.Vendor.find(v => v.id === po.vendorId)?.name}</div>
-                    <div className="text-xs text-slate-500">{po.items.length} Items • {po.centerNames.length} Centers • ₹{po.amount.toFixed(2)}</div>
+                    <div className="text-xs text-slate-500">{po.items.length} Items • {po.centerNames.length} Centers • ₹{(Number(po.amount) || 0).toFixed(2)}</div>
                   </td>
                   <td className="px-6 py-4">
                     <div className="text-sm font-bold text-slate-700">{po.requiredDate || 'N/A'}</div>
@@ -1559,7 +1559,7 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
                     </td>
                     <td className="px-6 py-4">
                       <div className="text-sm font-bold text-slate-700">{grn.location}</div>
-                      <div className="text-xs text-slate-500">Inv: {grn.invoiceNumber} • {grn.items.length} Items • Total: ₹{grn.amount.toFixed(2)}</div>
+                      <div className="text-xs text-slate-500">Inv: {grn.invoiceNumber} • {grn.items.length} Items • Total: ₹{(Number(grn.amount) || 0).toFixed(2)}</div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex flex-col space-y-1">

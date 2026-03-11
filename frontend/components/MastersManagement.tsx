@@ -1,29 +1,46 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MasterRecord, MasterType } from '../types';
-import { COA_CATEGORIES, GST_TYPES, TRANSACTION_TYPES, CENTERS, ENTITIES } from '../constants';
+import { COA_CATEGORIES, GST_TYPES, TRANSACTION_TYPES, CENTERS, ENTITIES, MASTER_GROUPS } from '../constants';
 import MultiSelect from './MultiSelect';
 
 interface MastersManagementProps {
   masters: Record<MasterType, MasterRecord[]>;
   onUpdate: (type: MasterType, records: MasterRecord[]) => void;
+  /** null = all sub-modules; [] = none; non-empty = only these. */
+  allowedMasterTypes?: MasterType[] | null;
+  /** null = full access (e.g. Super Admin). Otherwise per sub-module create/edit/view/delete. */
+  mastersPermissions?: Partial<Record<MasterType, ('create' | 'edit' | 'view' | 'delete')[]>> | null;
 }
 
-const MastersManagement: React.FC<MastersManagementProps> = ({ masters, onUpdate }) => {
+const MastersManagement: React.FC<MastersManagementProps> = ({ masters, onUpdate, allowedMasterTypes = null, mastersPermissions = null }) => {
   const [activeSubTab, setActiveSubTab] = useState<MasterType>('Vendor');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<MasterRecord | null>(null);
   
   const [formData, setFormData] = useState<Record<string, any>>({});
 
-  const masterGroups: { label: string; types: MasterType[] }[] = [
-    { label: 'Purchasing', types: ['Vendor', 'Vendor Site', 'Vendor Category', 'Applicant Type', 'Item', 'Item Category', 'UOM', 'Payment Terms'] },
-    { label: 'Organization', types: ['Department', 'Subdepartment', 'Cost Center', 'Entity', 'Center'] },
-    { label: 'Finance & Tax', types: ['COA', 'TDS', 'GST', 'Voucher'] },
-    { label: 'Geography', types: ['Country', 'Zone', 'State', 'City'] },
-  ];
+  const filteredGroups =
+    allowedMasterTypes === null || !Array.isArray(allowedMasterTypes)
+      ? MASTER_GROUPS
+      : MASTER_GROUPS.map((g) => ({
+          label: g.label,
+          types: g.types.filter((t) => allowedMasterTypes.includes(t)),
+        })).filter((g) => g.types.length > 0);
+
+  const allAllowedTypes = filteredGroups.flatMap((g) => g.types);
+
+  useEffect(() => {
+    if (allAllowedTypes.length > 0 && !allAllowedTypes.includes(activeSubTab)) {
+      setActiveSubTab(allAllowedTypes[0]);
+    }
+  }, [allAllowedTypes.join(','), activeSubTab]);
 
   const currentRecords = masters[activeSubTab] || [];
+
+  const canCreate = mastersPermissions == null || (mastersPermissions[activeSubTab] || []).includes('create');
+  const canEdit = mastersPermissions == null || (mastersPermissions[activeSubTab] || []).includes('edit');
+  const canDelete = mastersPermissions == null || (mastersPermissions[activeSubTab] || []).includes('delete');
 
   const handleToggleStatus = (id: string) => {
     const updated = currentRecords.map(r => 
@@ -527,11 +544,19 @@ const MastersManagement: React.FC<MastersManagementProps> = ({ masters, onUpdate
     }
   };
 
+  if (filteredGroups.length === 0) {
+    return (
+      <div className="p-8 text-center">
+        <p className="text-slate-500 font-bold">No master sub-modules are assigned to your role. Contact your administrator to get access to Vendor, Vendor Site, or other master data.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
         <aside className="space-y-6">
-          {masterGroups.map(group => (
+          {filteredGroups.map(group => (
             <div key={group.label} className="space-y-2">
               <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-2 mb-3">{group.label}</h4>
               <div className="space-y-1">
@@ -545,7 +570,7 @@ const MastersManagement: React.FC<MastersManagementProps> = ({ masters, onUpdate
                         : 'text-slate-500 hover:text-slate-900 hover:bg-white border border-transparent hover:border-slate-100'
                     }`}
                   >
-                    {tab}s
+                    {tab}
                   </button>
                 ))}
               </div>
@@ -562,7 +587,8 @@ const MastersManagement: React.FC<MastersManagementProps> = ({ masters, onUpdate
               </div>
               <button 
                 onClick={openAddModal}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center space-x-3 transition-all shadow-xl shadow-indigo-100 active:scale-95"
+                disabled={!canCreate}
+                className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center space-x-3 transition-all shadow-xl shadow-indigo-100 active:scale-95 ${canCreate ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M12 4v16m8-8H4" /></svg>
                 <span>{activeSubTab} Creation</span>
@@ -606,25 +632,33 @@ const MastersManagement: React.FC<MastersManagementProps> = ({ masters, onUpdate
                           <span className="text-[11px] font-bold text-slate-600 bg-slate-100 px-3 py-1 rounded-lg border border-slate-200">{integrationInfo}</span>
                         </td>
                         <td className="px-6 py-5 text-center">
-                          <button 
-                            onClick={() => handleToggleStatus(record.id)}
-                            className={`px-4 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest border transition-all ${
-                              record.status === 'Active' 
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100 shadow-sm' 
-                                : 'bg-rose-50 text-rose-600 border-rose-100 hover:bg-rose-100'
-                            }`}
-                          >
-                            {record.status}
-                          </button>
+                          {canEdit ? (
+                            <button 
+                              onClick={() => handleToggleStatus(record.id)}
+                              className={`px-4 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest border transition-all ${
+                                record.status === 'Active' 
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100 shadow-sm' 
+                                  : 'bg-rose-50 text-rose-600 border-rose-100 hover:bg-rose-100'
+                              }`}
+                            >
+                              {record.status}
+                            </button>
+                          ) : (
+                            <span className="text-[9px] font-black uppercase text-slate-400">{record.status}</span>
+                          )}
                         </td>
                         <td className="px-6 py-5 text-right">
                           <div className="flex justify-end space-x-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => openEditModal(record)} className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center hover:bg-indigo-600 hover:text-white transition-all shadow-sm">
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                            </button>
-                            <button onClick={() => handleDelete(record.id)} className="w-8 h-8 rounded-lg bg-rose-50 text-rose-500 flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all shadow-sm">
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                            </button>
+                            {canEdit && (
+                              <button onClick={() => openEditModal(record)} className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center hover:bg-indigo-600 hover:text-white transition-all shadow-sm">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                              </button>
+                            )}
+                            {canDelete && (
+                              <button onClick={() => handleDelete(record.id)} className="w-8 h-8 rounded-lg bg-rose-50 text-rose-500 flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all shadow-sm">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>

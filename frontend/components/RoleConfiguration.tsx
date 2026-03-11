@@ -1,12 +1,15 @@
 
 import React, { useState } from 'react';
-import { Role, ModuleType, Permission } from '../types';
-import { ALL_MODULES, ALL_PERMISSIONS } from '../constants';
+import { Role, ModuleType, Permission, MasterType } from '../types';
+import { ALL_MODULES, ALL_PERMISSIONS, ROLE_CONFIG_MODULES, MASTER_GROUPS, ALL_MASTER_TYPES } from '../constants';
 
 interface RoleConfigurationProps {
   roles: Role[];
   setRoles: React.Dispatch<React.SetStateAction<Role[]>>;
 }
+
+const getEmptyMastersPermissions = (): Partial<Record<MasterType, Permission[]>> =>
+  ALL_MASTER_TYPES.reduce((acc, t) => ({ ...acc, [t]: [] }), {} as Partial<Record<MasterType, Permission[]>>);
 
 const RoleConfiguration: React.FC<RoleConfigurationProps> = ({ roles, setRoles }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -17,6 +20,7 @@ const RoleConfiguration: React.FC<RoleConfigurationProps> = ({ roles, setRoles }
   const getEmptyPermissions = () => ALL_MODULES.reduce((acc, mod) => ({ ...acc, [mod]: [] }), {} as Record<ModuleType, Permission[]>);
 
   const [permissions, setPermissions] = useState<Record<ModuleType, Permission[]>>(getEmptyPermissions());
+  const [mastersPermissions, setMastersPermissions] = useState<Partial<Record<MasterType, Permission[]>>>(getEmptyMastersPermissions());
 
   const togglePermission = (module: ModuleType, permission: Permission) => {
     setPermissions(prev => {
@@ -32,13 +36,26 @@ const RoleConfiguration: React.FC<RoleConfigurationProps> = ({ roles, setRoles }
     setRoles(prev => prev.map(r => r.id === id ? { ...r, isActive: !r.isActive } : r));
   };
 
+  const toggleMastersPermission = (type: MasterType, permission: Permission) => {
+    setMastersPermissions(prev => {
+      const current = prev[type] || [];
+      const updated = current.includes(permission)
+        ? current.filter(p => p !== permission)
+        : [...current, permission];
+      return { ...prev, [type]: updated };
+    });
+  };
+
   const handleSaveRole = (e: React.FormEvent) => {
     e.preventDefault();
+    const hasMastersView = (permissions[ModuleType.MASTERS] || []).includes('view');
+    const finalMastersPermissions = hasMastersView ? mastersPermissions : undefined;
     if (editingId) {
       setRoles(prev => prev.map(r => r.id === editingId ? { 
         ...r, 
         name: roleName, 
         permissions,
+        mastersPermissions: finalMastersPermissions,
         isActive: isRoleActive
       } : r));
     } else {
@@ -46,6 +63,7 @@ const RoleConfiguration: React.FC<RoleConfigurationProps> = ({ roles, setRoles }
         id: Math.random().toString(36).substr(2, 9),
         name: roleName,
         permissions,
+        mastersPermissions: finalMastersPermissions,
         isActive: isRoleActive
       };
       setRoles(prev => [...prev, newRole]);
@@ -60,11 +78,22 @@ const RoleConfiguration: React.FC<RoleConfigurationProps> = ({ roles, setRoles }
       setIsRoleActive(role.isActive);
       const normalized = { ...getEmptyPermissions(), ...role.permissions };
       setPermissions(normalized);
+      if (role.mastersPermissions && Object.keys(role.mastersPermissions).length > 0) {
+        const base = getEmptyMastersPermissions();
+        setMastersPermissions({ ...base, ...role.mastersPermissions });
+      } else if (role.allowedMasterTypes && role.allowedMasterTypes.length > 0) {
+        const base = getEmptyMastersPermissions();
+        role.allowedMasterTypes.forEach(t => { base[t] = ['view']; });
+        setMastersPermissions(base);
+      } else {
+        setMastersPermissions(getEmptyMastersPermissions());
+      }
     } else {
       setEditingId(null);
       setRoleName('');
       setIsRoleActive(true);
       setPermissions(getEmptyPermissions());
+      setMastersPermissions(getEmptyMastersPermissions());
     }
     setIsModalOpen(true);
   };
@@ -75,6 +104,7 @@ const RoleConfiguration: React.FC<RoleConfigurationProps> = ({ roles, setRoles }
     setRoleName('');
     setIsRoleActive(true);
     setPermissions(getEmptyPermissions());
+    setMastersPermissions(getEmptyMastersPermissions());
   };
 
   const handleDelete = (id: string) => {
@@ -127,13 +157,15 @@ const RoleConfiguration: React.FC<RoleConfigurationProps> = ({ roles, setRoles }
             <div className="space-y-2">
               <p className="text-xs font-semibold text-slate-400 uppercase">Active Permissions</p>
               <div className="flex flex-wrap gap-1.5">
-                {Object.entries(role.permissions).map(([mod, perms]) => (
-                  (perms as any[]).length > 0 && (
-                    <span key={mod} className="text-[10px] font-medium px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
-                      {mod}: {(perms as any[]).length}
-                    </span>
-                  )
-                ))}
+                {Object.entries(role.permissions)
+                  .filter(([mod]) => ROLE_CONFIG_MODULES.includes(mod as ModuleType))
+                  .map(([mod, perms]) =>
+                    (perms as any[]).length > 0 ? (
+                      <span key={mod} className="text-[10px] font-medium px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                        {mod}: {(perms as any[]).length}
+                      </span>
+                    ) : null
+                  )}
               </div>
             </div>
           </div>
@@ -191,7 +223,7 @@ const RoleConfiguration: React.FC<RoleConfigurationProps> = ({ roles, setRoles }
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {ALL_MODULES.map(module => (
+                    {ROLE_CONFIG_MODULES.map(module => (
                       <tr key={module} className="hover:bg-slate-50/50 transition-colors">
                         <td className="px-6 py-4 text-sm font-semibold text-slate-700">{module}</td>
                         {ALL_PERMISSIONS.map(permission => (
@@ -214,6 +246,56 @@ const RoleConfiguration: React.FC<RoleConfigurationProps> = ({ roles, setRoles }
                   </tbody>
                 </table>
               </div>
+
+              {(permissions[ModuleType.MASTERS] || []).includes('view') && (
+                <div className="mt-8 rounded-xl border border-slate-200 overflow-hidden">
+                  <div className="bg-slate-50 px-6 py-3 border-b border-slate-200">
+                    <h3 className="text-sm font-bold text-slate-700">Within Masters Control – sub-module permissions</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">Set create, edit, view, and delete for each master sub-module. Only sub-modules with at least View will appear in the Masters sidebar.</p>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead className="bg-slate-50 border-b border-slate-200">
+                        <tr>
+                          <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Sub-module</th>
+                          {ALL_PERMISSIONS.map(p => (
+                            <th key={p} className="px-6 py-4 text-xs font-bold text-slate-500 uppercase text-center">{p}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {MASTER_GROUPS.map(group => (
+                          <React.Fragment key={group.label}>
+                            <tr className="bg-slate-50/50">
+                              <td colSpan={5} className="px-6 py-2 text-[10px] font-black text-slate-400 uppercase tracking-wider">{group.label}</td>
+                            </tr>
+                            {group.types.map(type => (
+                              <tr key={type} className="hover:bg-slate-50/50 transition-colors">
+                                <td className="px-6 py-4 text-sm font-semibold text-slate-700">{type}</td>
+                                {ALL_PERMISSIONS.map(permission => (
+                                  <td key={permission} className="px-6 py-4 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleMastersPermission(type, permission)}
+                                      className={`w-6 h-6 rounded border-2 flex items-center justify-center mx-auto transition-all ${
+                                        (mastersPermissions[type] || []).includes(permission)
+                                          ? 'bg-blue-600 border-blue-600 text-white'
+                                          : 'border-slate-300 bg-white text-transparent hover:border-blue-400'
+                                      }`}
+                                    >
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>
+                                    </button>
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </React.Fragment>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="p-6 border-t border-slate-100 flex justify-end space-x-3 bg-slate-50">

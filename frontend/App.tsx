@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User, Role, NavigationTab, ModuleType, MasterRecord, MasterType, WorkflowRule, DepartmentLimit, Permission } from './types';
-import { DEPARTMENTS } from './constants';
+import { DEPARTMENTS, ALL_MASTER_TYPES } from './constants';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import UserManagement from './components/UserManagement';
@@ -152,8 +152,43 @@ const App: React.FC = () => {
     return userRoles.some(r => r.permissions[module]?.includes(permission));
   };
 
+  const getMastersAllowedTypes = (): MasterType[] | null => {
+    if (!currentUser) return null;
+    const isSuperAdmin = roles.filter(r => currentUser.roleIds.includes(r.id)).some(r => r.name === 'Super Admin');
+    if (isSuperAdmin) return null;
+    const userRoles = roles.filter(r => currentUser.roleIds.includes(r.id) && r.isActive);
+    const withMastersView = userRoles.filter(r => r.permissions[ModuleType.MASTERS]?.includes('view'));
+    if (withMastersView.length === 0) return null;
+    const merged = getMastersPermissions();
+    if (!merged) return null;
+    return (Object.keys(merged) as MasterType[]).filter(t => merged[t]?.includes('view'));
+  };
+
+  const getMastersPermissions = (): Partial<Record<MasterType, Permission[]>> | null => {
+    if (!currentUser) return null;
+    const isSuperAdmin = roles.filter(r => currentUser.roleIds.includes(r.id)).some(r => r.name === 'Super Admin');
+    if (isSuperAdmin) return null;
+    const userRoles = roles.filter(r => currentUser.roleIds.includes(r.id) && r.isActive);
+    const withMastersView = userRoles.filter(r => r.permissions[ModuleType.MASTERS]?.includes('view'));
+    if (withMastersView.length === 0) return null;
+    const result: Partial<Record<MasterType, Permission[]>> = {};
+    const fullPerms: Permission[] = ['create', 'edit', 'view', 'delete'];
+    withMastersView.forEach(r => {
+      const mp = r.mastersPermissions
+        ?? (r.allowedMasterTypes?.length
+          ? Object.fromEntries(r.allowedMasterTypes.map(t => [t, ['view'] as Permission[]]))
+          : Object.fromEntries(ALL_MASTER_TYPES.map(t => [t, fullPerms])));
+      (Object.entries(mp) as [MasterType, Permission[]][]).forEach(([type, perms]) => {
+        const set = new Set(result[type] || []);
+        (perms || []).forEach(p => set.add(p));
+        result[type] = Array.from(set);
+      });
+    });
+    return result;
+  };
+
   const renderContent = () => {
-    const adminTabs: NavigationTab[] = ['users', 'roles', 'workflows', 'masters'];
+    const adminTabs: NavigationTab[] = ['users', 'roles', 'workflows'];
     if (adminTabs.includes(activeTab)) {
       const isSuperAdmin = roles.filter(r => currentUser?.roleIds.includes(r.id)).some(r => r.name === 'Super Admin');
       if (!isSuperAdmin) return <div className="p-8 text-center font-bold text-slate-500">Access Denied: Admin privileges required.</div>;
@@ -164,7 +199,9 @@ const App: React.FC = () => {
       case 'users': return <UserManagement users={users} setUsers={setUsers} roles={roles} masters={masters} />;
       case 'roles': return <RoleConfiguration roles={roles} setRoles={setRoles} />;
       case 'workflows': return <WorkflowConfiguration workflows={workflows} setWorkflows={setWorkflows} users={users} masters={masters} />;
-      case 'masters': return <MastersManagement masters={masters} onUpdate={updateMasters} />;
+      case 'masters':
+        if (!hasPermission(ModuleType.MASTERS, 'view')) return <div className="p-8 text-center font-bold text-slate-500">Access Denied</div>;
+        return <MastersManagement masters={masters} onUpdate={updateMasters} allowedMasterTypes={getMastersAllowedTypes()} mastersPermissions={getMastersPermissions()} />;
       case 'purchase_request':
         if (!hasPermission(ModuleType.PR, 'view')) return <div className="p-8 text-center font-bold text-slate-500">Access Denied</div>;
         return (

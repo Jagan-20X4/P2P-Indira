@@ -206,6 +206,7 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
       status: 'Pending',
       currentStepIndex: 0,
       createdAt: new Date().toISOString(),
+      createdBy: currentUser.id,
       attachments: rcForm.attachments || [],
       items: itemsWithLocked
     };

@@ -225,6 +225,7 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
       status: 'Pending',
       currentStepIndex: 0,
       createdAt: new Date().toISOString(),
+      createdBy: currentUser.id,
       attachments: grnForm.attachments || []
     };
     setGrns([...grns, newGRN]);
@@ -493,6 +494,7 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
   const isGrnReadOnly = !!grnForm.id && !(grnForm.status === 'Rejected' && grnForm.createdBy === currentUser.id);
   const isInvoiceReadOnly = !!invoiceForm.id && !(invoiceForm.status === 'Rejected' && invoiceForm.createdBy === currentUser.id);
   const isApprovedRcView = !!(rcForm.id && rcForm.status === 'Approved');
+  const rcGrns = grns.filter(g => g.rateContractId);
 
   const getItemCenters = (item: ItemLine): string[] =>
     (item.centerNames && item.centerNames.length > 0) ? item.centerNames : (item.centerName ? [item.centerName] : []);
@@ -1005,21 +1007,23 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                           <div className="col-span-4">
                             <label className="text-[10px] font-black text-slate-400 uppercase">Item</label>
                             <div className="text-sm font-bold text-slate-700">{rcItem.itemName}</div>
-                            <div className="text-[10px] text-indigo-500 font-black">RC Rate: ₹{rcItem.rate} | Center: {getItemCenters(rcItem).join(', ') || '—'}</div>
+                            <div className="text-[10px] text-indigo-500 font-black">RC Rate: ₹{rcItem.rate} | RC Qty: {rcItem.quantity ?? 0} | Center: {getItemCenters(rcItem).join(', ') || '—'}</div>
                             <div className="text-[10px] text-slate-500 italic mt-1 font-bold">RC Remarks: {rcItem.remarks}</div>
                           </div>
                           <div className="col-span-3 space-y-1">
                             <label className="text-[10px] font-black text-slate-400 uppercase">Qty Received</label>
                             <input 
                               type="number"
-                              className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+                              className={`w-full bg-white border rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 ${(Number(grnItem.quantity) || 0) > (Number(rcItem.quantity) || 0) ? 'border-red-500' : 'border-slate-200'}`}
                               value={grnItem.quantity}
                               disabled={isGrnReadOnly}
                               onChange={e => {
                                 const qty = Number(e.target.value);
-                                // Validation: GRN qty should not be greater than PO qty (or RC effectively unlimited but we can add a sanity check)
-                                // In RC module, we don't have a PO qty, so we just calculate.
-                                
+                                const maxQty = Number(rcItem.quantity) ?? 0;
+                                if (maxQty > 0 && qty > maxQty) {
+                                  alert('Quantity received cannot exceed the rate contract quantity.');
+                                  return;
+                                }
                                 const updatedItems = [...(grnForm.items || [])];
                                 const index = updatedItems.findIndex(i => i.id === rcItem.id);
                                 
@@ -1043,6 +1047,9 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                                 setGrnForm({ ...grnForm, items: updatedItems, amount: total });
                               }}
                             />
+                            {(Number(grnItem.quantity) || 0) > (Number(rcItem.quantity) || 0) && (
+                              <div className="text-[8px] text-red-500 font-bold uppercase mt-1">Exceeds RC Qty</div>
+                            )}
                           </div>
                           <div className="col-span-3 space-y-1">
                             <label className="text-[10px] font-black text-slate-400 uppercase">Total Amount (INR)</label>
@@ -1479,7 +1486,7 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                 </tr>
               ))}
 
-              {viewMode === 'GRN' && grns.map(grn => {
+              {viewMode === 'GRN' && rcGrns.map(grn => {
                 const rc = rateContracts.find(r => r.id === grn.rateContractId);
                 return (
                   <tr key={grn.id} className="hover:bg-slate-50/50 transition-colors">
@@ -1653,7 +1660,7 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
               ))}
 
               {((viewMode === 'RC' && rateContracts.length === 0) || 
-                (viewMode === 'GRN' && grns.length === 0) || 
+                (viewMode === 'GRN' && rcGrns.length === 0) || 
                 (viewMode === 'Invoice' && invoices.length === 0)) && (
                 <tr>
                   <td colSpan={4} className="px-6 py-12 text-center text-slate-400 font-medium">

@@ -419,6 +419,8 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
     setSelectedGRN(null);
   };
 
+  const poGrns = grns.filter(g => g.purchaseOrderId);
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, source: Attachment['source']) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1567,7 +1569,7 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
                 </tr>
               ))}
 
-              {viewMode === 'GRN' && grns.map(grn => {
+              {viewMode === 'GRN' && poGrns.map(grn => {
                 const po = purchaseOrders.find(p => p.id === grn.purchaseOrderId);
                 return (
                   <tr key={grn.id} className="hover:bg-slate-50/50 transition-colors">
@@ -1673,7 +1675,7 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
               ))}
 
               {((viewMode === 'PO' && purchaseOrders.length === 0) || 
-                (viewMode === 'GRN' && grns.length === 0) || 
+                (viewMode === 'GRN' && poGrns.length === 0) || 
                 (viewMode === 'Invoice' && invoices.length === 0)) && (
                 <tr>
                   <td colSpan={4} className="px-6 py-12 text-center text-slate-400 font-medium">

@@ -1433,7 +1433,24 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                       {rc.status === 'Approved' && rc.createdBy === currentUser.id && (
                         <>
                           <button 
-                            onClick={() => { setSelectedRC(rc); setShowForm(true); }}
+                            onClick={() => {
+                              setSelectedRC(rc);
+                              setGrnForm({
+                                entityName: rc.entityName,
+                                rateContractId: rc.id,
+                                vendorSiteId: rc.vendorSiteId || '',
+                                shippingAddressId: rc.shippingAddressId || '',
+                                billingAddressId: rc.billingAddressId || '',
+                                location: Array.from(new Set(rc.items.flatMap(i => getItemCenters(i))))[0] || '',
+                                department: rc.department || '',
+                                subDepartment: rc.subDepartment || '',
+                                remarks: rc.remarks || '',
+                                items: (rc.items || []).map(item => ({ ...item, quantity: 0, amount: 0 })),
+                                amount: 0,
+                                attachments: []
+                              });
+                              setShowForm(true);
+                            }}
                             className="text-xs font-black text-indigo-600 hover:underline"
                           >
                             Create GRN

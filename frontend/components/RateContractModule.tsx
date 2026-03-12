@@ -714,8 +714,7 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
                     value={rcForm.vendorSiteId}
                     onChange={e => setRcForm({ ...rcForm, vendorSiteId: e.target.value })}
-                    disabled={isRcReadOnly || !rcForm.vendorId}
-                  >
+                    disabled={!!rcForm.id && rcForm.status === 'Approved'}                  >
                     <option value="">Select Vendor Site</option>
                     {(masters['Vendor Site'] || []).filter(s => s.vendorId === rcForm.vendorId).map(s => (
                       <option key={s.id} value={s.id}>{s.name} ({s.code})</option>

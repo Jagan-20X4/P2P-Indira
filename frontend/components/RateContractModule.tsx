@@ -1027,7 +1027,7 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
                     value={grnForm.vendorSiteId}
                     onChange={e => setGrnForm({ ...grnForm, vendorSiteId: e.target.value })}
-                    disabled={isGrnReadOnly}
+                    disabled={isGrnReadOnly || selectedRC?.status === 'Approved'}
                   >
                     <option value="">Select Vendor Site</option>
                     {(masters['Vendor Site'] || []).filter(s => s.vendorId === selectedRC.vendorId).map(s => (
@@ -1121,71 +1121,20 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                   </div>
                   <div className="space-y-3">
                     {selectedRC.items.map((rcItem) => {
-                      const grnItem = grnForm.items?.find(i => i.id === rcItem.id) || { ...rcItem, quantity: 0, amount: 0 };
+                      const baseAmount = (Number(rcItem.rate) || 0) * (Number(rcItem.quantity) || 0);
                       return (
                         <div key={rcItem.id} className="grid grid-cols-12 gap-4 items-end bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                          <div className="col-span-4">
-                            <label className="text-[10px] font-black text-slate-400 uppercase">Item</label>
+                          <div className="col-span-4 space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Item Name</label>
                             <div className="text-sm font-bold text-slate-700">{rcItem.itemName}</div>
-                            <div className="text-[10px] text-indigo-500 font-black">RC Rate: ₹{rcItem.rate} | RC Qty: {rcItem.quantity ?? 0} | Center: {getItemCenters(rcItem).join(', ') || '—'}</div>
-                            <div className="text-[10px] text-slate-500 italic mt-1 font-bold">RC Remarks: {rcItem.remarks}</div>
                           </div>
-                          <div className="col-span-3 space-y-1">
-                            <label className="text-[10px] font-black text-slate-400 uppercase">Qty Received</label>
-                            <input 
-                              type="number"
-                              className={`w-full bg-white border rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 ${(Number(grnItem.quantity) || 0) > (Number(rcItem.quantity) || 0) ? 'border-red-500' : 'border-slate-200'}`}
-                              value={grnItem.quantity}
-                              disabled={isGrnReadOnly}
-                              onChange={e => {
-                                const qty = Number(e.target.value);
-                                const maxQty = Number(rcItem.quantity) ?? 0;
-                                if (maxQty > 0 && qty > maxQty) {
-                                  alert('Quantity received cannot exceed the rate contract quantity.');
-                                  return;
-                                }
-                                const updatedItems = [...(grnForm.items || [])];
-                                const index = updatedItems.findIndex(i => i.id === rcItem.id);
-                                const tdsPct = grnForm.tds ?? 0;
-                                const gstPct = grnForm.gst ?? 0;
-                                const base = qty * rcItem.rate;
-                                const tdsAmount = base * (tdsPct / 100);
-                                const gstAmount = base * (gstPct / 100);
-                                const totalAmount = base + gstAmount - tdsAmount;
-                                const vendor = (masters.Vendor ?? []).find((v: any) => v.id === selectedRC?.vendorId);
-                                const center = (masters.Center ?? []).find((c: any) => c.name === grnForm.location);
-                                const isIntraState = vendor && center && (vendor as any).state === (center as any).state;
-                                const newItem: ItemLine = {
-                                  ...rcItem,
-                                  quantity: qty,
-                                  amount: base,
-                                  tds: tdsPct,
-                                  gst: gstPct,
-                                  tdsAmount,
-                                  gstAmount,
-                                  totalAmount,
-                                  cgst: isIntraState ? gstAmount / 2 : 0,
-                                  sgst: isIntraState ? gstAmount / 2 : 0,
-                                  igst: isIntraState ? 0 : gstAmount
-                                };
-                                if (index > -1) updatedItems[index] = newItem;
-                                else updatedItems.push(newItem);
-                                const total = updatedItems.reduce((sum, i) => sum + (i.totalAmount || 0), 0);
-                                setGrnForm({ ...grnForm, items: updatedItems, amount: total });
-                              }}
-                            />
-                            {(Number(grnItem.quantity) || 0) > (Number(rcItem.quantity) || 0) && (
-                              <div className="text-[8px] text-red-500 font-bold uppercase mt-1">Exceeds RC Qty</div>
-                            )}
+                          <div className="col-span-4 space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Rate (INR)</label>
+                            <div className="text-sm font-bold text-slate-700">₹{(Number(rcItem.rate) || 0).toFixed(2)}</div>
                           </div>
-                          <div className="col-span-3 space-y-1">
-                            <label className="text-[10px] font-black text-slate-400 uppercase">Total Amount (INR)</label>
-                            <input 
-                              type="number"
-                              readOnly
-                              className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-indigo-600"
-                              value={(Number(grnItem.totalAmount) || 0).toFixed(2)}
-                            />
+                          <div className="col-span-4 space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Base Amount</label>
+                            <div className="text-sm font-bold text-slate-700">₹{baseAmount.toFixed(2)}</div>
                           </div>
                         </div>
                       );
@@ -1220,20 +1169,6 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                       <div className="text-lg font-black text-indigo-700">
                         ₹{(Number(grnForm.amount) || 0).toFixed(2)}
                       </div>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-4 pt-4 border-t border-slate-200/50">
-                    <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
-                      <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block mb-1">Total CGST</label>
-                      <div className="text-xs font-bold text-slate-600">₹{(grnForm.items || []).reduce((sum, i) => sum + (i.cgst || 0), 0).toFixed(2)}</div>
-                    </div>
-                    <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
-                      <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block mb-1">Total SGST</label>
-                      <div className="text-xs font-bold text-slate-600">₹{(grnForm.items || []).reduce((sum, i) => sum + (i.sgst || 0), 0).toFixed(2)}</div>
-                    </div>
-                    <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
-                      <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block mb-1">Total IGST</label>
-                      <div className="text-xs font-bold text-slate-600">₹{(grnForm.items || []).reduce((sum, i) => sum + (i.igst || 0), 0).toFixed(2)}</div>
                     </div>
                   </div>
                 </div>
@@ -1447,20 +1382,6 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                       </div>
                     </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-4 pt-4 border-t border-slate-200/50">
-                    <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
-                      <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block mb-1">Total CGST</label>
-                      <div className="text-xs font-bold text-slate-600">₹{(invoiceForm.items || []).reduce((sum, i) => sum + (i.cgst || 0), 0).toFixed(2)}</div>
-                    </div>
-                    <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
-                      <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block mb-1">Total SGST</label>
-                      <div className="text-xs font-bold text-slate-600">₹{(invoiceForm.items || []).reduce((sum, i) => sum + (i.sgst || 0), 0).toFixed(2)}</div>
-                    </div>
-                    <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
-                      <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block mb-1">Total IGST</label>
-                      <div className="text-xs font-bold text-slate-600">₹{(invoiceForm.items || []).reduce((sum, i) => sum + (i.igst || 0), 0).toFixed(2)}</div>
-                    </div>
-                  </div>
                 </div>
               </>
             )}
@@ -1654,7 +1575,11 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                                 department: rc.department || '',
                                 subDepartment: rc.subDepartment || '',
                                 remarks: rc.remarks || '',
-                                items: (rc.items || []).map(item => ({ ...item, quantity: 0, amount: 0 })),
+                                items: (rc.items || []).map(item => ({
+                                  ...item,
+                                  quantity: item.quantity ?? 0,
+                                  amount: (Number(item.rate) || 0) * (Number(item.quantity) || 0)
+                                })),
                                 amount: 0,
                                 attachments: [],
                                 tds: 0,

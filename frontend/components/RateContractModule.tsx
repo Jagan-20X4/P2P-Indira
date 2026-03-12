@@ -62,7 +62,9 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
     remarks: '',
     attachments: [],
     shippingAddressId: '',
-    billingAddressId: ''
+    billingAddressId: '',
+    tds: 0,
+    gst: 0
   });
 
   const [invoiceForm, setInvoiceForm] = useState<Partial<Invoice>>({
@@ -71,7 +73,10 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
     location: '',
     attachments: [],
     shippingAddressId: '',
-    billingAddressId: ''
+    billingAddressId: '',
+    tds: 0,
+    gst: 0,
+    items: []
   });
 
   const [bulkUploadType, setBulkUploadType] = useState<'RC' | 'GRN' | 'Invoice' | null>(null);
@@ -81,6 +86,91 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
     const total = (rcForm.items || []).reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
     setRcForm(prev => ({ ...prev, amount: total }));
   }, [rcForm.items]);
+
+  // Recalculate GRN items when form-level TDS or GST changes (only when creating new GRN)
+  useEffect(() => {
+    if (grnForm.id || !selectedRC || !grnForm.items?.length) return;
+    const vendor = (masters.Vendor ?? []).find((v: any) => v.id === selectedRC.vendorId);
+    const center = (masters.Center ?? []).find((c: any) => c.name === grnForm.location);
+    const isIntraState = vendor && center && (vendor as any).state === (center as any).state;
+    const tdsPercent = grnForm.tds ?? 0;
+    const gstPercent = grnForm.gst ?? 0;
+
+    setGrnForm(prev => {
+      const updatedItems = (prev.items || []).map((item: ItemLine) => {
+        const qty = Number(item.quantity) || 0;
+        const rate = Number(item.rate) || 0;
+        const base = qty * rate;
+        const tdsAmount = base * (tdsPercent / 100);
+        const gstAmount = base * (gstPercent / 100);
+        const totalAmount = base + gstAmount - tdsAmount;
+        const updated: ItemLine = {
+          ...item,
+          amount: base,
+          tds: tdsPercent,
+          gst: gstPercent,
+          tdsAmount,
+          gstAmount,
+          totalAmount
+        };
+        if (isIntraState) {
+          updated.cgst = gstAmount / 2;
+          updated.sgst = gstAmount / 2;
+          updated.igst = 0;
+        } else {
+          updated.cgst = 0;
+          updated.sgst = 0;
+          updated.igst = gstAmount;
+        }
+        return updated;
+      });
+      const amount = updatedItems.reduce((sum, i) => sum + (Number(i.totalAmount) || 0), 0);
+      return { ...prev, items: updatedItems, amount };
+    });
+  }, [grnForm.tds, grnForm.gst, grnForm.location, selectedRC?.vendorId, selectedRC?.id]);
+
+  // Recalculate Invoice items when form-level TDS or GST changes (only when creating new Invoice)
+  useEffect(() => {
+    if (invoiceForm.id || !selectedGRN || !invoiceForm.items?.length) return;
+    const rc = rateContracts.find(r => r.id === selectedGRN.rateContractId);
+    const vendor = rc ? (masters.Vendor ?? []).find((v: any) => v.id === rc.vendorId) : null;
+    const center = (masters.Center ?? []).find((c: any) => c.name === invoiceForm.location);
+    const isIntraState = vendor && center && (vendor as any).state === (center as any).state;
+    const tdsPercent = invoiceForm.tds ?? 0;
+    const gstPercent = invoiceForm.gst ?? 0;
+
+    setInvoiceForm(prev => {
+      const updatedItems = (prev.items || []).map((item: ItemLine) => {
+        const qty = Number(item.quantity) || 0;
+        const rate = Number(item.rate) || 0;
+        const base = qty * rate;
+        const tdsAmount = base * (tdsPercent / 100);
+        const gstAmount = base * (gstPercent / 100);
+        const totalAmount = base + gstAmount - tdsAmount;
+        const updated: ItemLine = {
+          ...item,
+          amount: base,
+          tds: tdsPercent,
+          gst: gstPercent,
+          tdsAmount,
+          gstAmount,
+          totalAmount
+        };
+        if (isIntraState) {
+          updated.cgst = gstAmount / 2;
+          updated.sgst = gstAmount / 2;
+          updated.igst = 0;
+        } else {
+          updated.cgst = 0;
+          updated.sgst = 0;
+          updated.igst = gstAmount;
+        }
+        return updated;
+      });
+      const amount = updatedItems.reduce((sum, i) => sum + (Number(i.totalAmount) || 0), 0);
+      return { ...prev, items: updatedItems, amount };
+    });
+  }, [invoiceForm.tds, invoiceForm.gst, invoiceForm.location, selectedGRN?.id, rateContracts]);
 
   const downloadTemplate = (type: 'RC' | 'GRN' | 'Invoice') => {
     let headers = '';
@@ -140,16 +230,14 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
-      complete: (results) => {
+        complete: (results) => {
         const data = results.data as any[];
         const newItems: ItemLine[] = data.map((row: any) => {
           const itemName = row['Item Name'] || row['itemName'] || '';
           const qty = type === 'RC' ? 1 : parseFloat(row['Qty'] || row['quantity'] || '0');
           const rate = parseFloat(row['Rate'] || row['rate'] || '0');
           const centerName = row['Center'] || row['centerName'] || '';
-          
           const base = qty * rate;
-
           return {
             id: Math.random().toString(),
             itemName,
@@ -157,6 +245,7 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
             rate,
             amount: base,
             centerName,
+            centerNames: centerName ? [centerName] : [],
             remarks: row['Remarks'] || row['remarks'] || ''
           };
         });
@@ -240,9 +329,12 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
       id: `INV-${Math.floor(Math.random() * 10000)}`,
       entityName: selectedGRN.entityName,
       grnId: selectedGRN.id,
+      department: selectedGRN.department,
+      subDepartment: selectedGRN.subDepartment,
       status: 'Pending',
       currentStepIndex: 0,
       createdAt: new Date().toISOString(),
+      createdBy: currentUser.id,
       attachments: invoiceForm.attachments || []
     };
     setInvoices([...invoices, newInvoice]);
@@ -259,8 +351,8 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
       amount: 0, remarks: '', attachments: [],
       shippingAddressId: '', billingAddressId: ''
     });
-    setGrnForm({ vendorSiteId: '', location: '', items: [], amount: 0, remarks: '', attachments: [], shippingAddressId: '', billingAddressId: '' });
-    setInvoiceForm({ vendorSiteId: '', location: '', attachments: [], shippingAddressId: '', billingAddressId: '' });
+    setGrnForm({ vendorSiteId: '', location: '', items: [], amount: 0, remarks: '', attachments: [], shippingAddressId: '', billingAddressId: '', tds: 0, gst: 0 });
+    setInvoiceForm({ vendorSiteId: '', location: '', attachments: [], shippingAddressId: '', billingAddressId: '', tds: 0, gst: 0, items: [] });
     setSelectedRC(null);
     setSelectedGRN(null);
   };
@@ -495,6 +587,10 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
   const isInvoiceReadOnly = !!invoiceForm.id && !(invoiceForm.status === 'Rejected' && invoiceForm.createdBy === currentUser.id);
   const isApprovedRcView = !!(rcForm.id && rcForm.status === 'Approved');
   const rcGrns = grns.filter(g => g.rateContractId);
+  const rcInvoices = invoices.filter(inv => {
+    const g = grns.find(grn => grn.id === inv.grnId);
+    return !!g?.rateContractId;
+  });
 
   const getItemCenters = (item: ItemLine): string[] =>
     (item.centerNames && item.centerNames.length > 0) ? item.centerNames : (item.centerName ? [item.centerName] : []);
@@ -744,7 +840,6 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                     {(masters['Terms & Conditions'] || []).map(tc => <option key={tc.id} value={tc.id}>{tc.name}</option>)}
                   </select>
                 </div>
-                
                 {/* Items Section */}
                 <div className="col-span-2 space-y-4">
                   <div className="flex justify-between items-center">
@@ -980,6 +1075,31 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                     {Array.from(new Set(selectedRC.items.flatMap(i => getItemCenters(i)))).map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">TDS</label>
+                  <select 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                    value={grnForm.tds}
+                    onChange={e => setGrnForm({ ...grnForm, tds: Number(e.target.value) })}
+                    disabled={isGrnReadOnly}
+                  >
+                    <option value="0">Select TDS</option>
+                    {(masters['TDS'] || []).map(t => <option key={t.id} value={t.rate}>{t.name}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">GST</label>
+                  <select 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                    value={grnForm.gst}
+                    onChange={e => setGrnForm({ ...grnForm, gst: Number(e.target.value) })}
+                    disabled={isGrnReadOnly}
+                  >
+                    <option value="0">Select GST</option>
+                    {(masters['GST'] || []).map(g => <option key={g.id} value={g.rate}>{g.name}</option>)}
+                  </select>
+                </div>
                 
                 <div className="col-span-2 space-y-4 mt-4">
                   <div className="flex justify-between items-center">
@@ -1026,23 +1146,30 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                                 }
                                 const updatedItems = [...(grnForm.items || [])];
                                 const index = updatedItems.findIndex(i => i.id === rcItem.id);
-                                
+                                const tdsPct = grnForm.tds ?? 0;
+                                const gstPct = grnForm.gst ?? 0;
                                 const base = qty * rcItem.rate;
-                                const tdsAmount = base * ((rcItem.tds || 0) / 100);
-                                const gstAmount = base * ((rcItem.gst || 0) / 100);
+                                const tdsAmount = base * (tdsPct / 100);
+                                const gstAmount = base * (gstPct / 100);
                                 const totalAmount = base + gstAmount - tdsAmount;
-                                
-                                const newItem: ItemLine = { 
-                                  ...rcItem, 
-                                  quantity: qty, 
+                                const vendor = (masters.Vendor ?? []).find((v: any) => v.id === selectedRC?.vendorId);
+                                const center = (masters.Center ?? []).find((c: any) => c.name === grnForm.location);
+                                const isIntraState = vendor && center && (vendor as any).state === (center as any).state;
+                                const newItem: ItemLine = {
+                                  ...rcItem,
+                                  quantity: qty,
                                   amount: base,
+                                  tds: tdsPct,
+                                  gst: gstPct,
                                   tdsAmount,
                                   gstAmount,
-                                  totalAmount
+                                  totalAmount,
+                                  cgst: isIntraState ? gstAmount / 2 : 0,
+                                  sgst: isIntraState ? gstAmount / 2 : 0,
+                                  igst: isIntraState ? 0 : gstAmount
                                 };
                                 if (index > -1) updatedItems[index] = newItem;
                                 else updatedItems.push(newItem);
-                                
                                 const total = updatedItems.reduce((sum, i) => sum + (i.totalAmount || 0), 0);
                                 setGrnForm({ ...grnForm, items: updatedItems, amount: total });
                               }}
@@ -1066,30 +1193,51 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">TDS</label>
-                  <select 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
-                    value={grnForm.tds}
-                    onChange={e => setGrnForm({ ...grnForm, tds: Number(e.target.value) })}
-                    disabled={isGrnReadOnly}
-                  >
-                    <option value="0">Select TDS</option>
-                    {(masters['TDS'] || []).map(t => <option key={t.id} value={t.rate}>{t.name}</option>)}
-                  </select>
+                {/* Tax & Amount Summary (INR) - GRN */}
+                <div className="col-span-2 bg-slate-50 p-6 rounded-3xl border border-slate-200 mt-4 space-y-4">
+                  <h4 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] border-b border-slate-200 pb-2">Tax & Amount Summary (INR)</h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Base Amount</label>
+                      <div className="text-sm font-bold text-slate-700">
+                        ₹{(grnForm.items || []).reduce((sum, i) => sum + (Number(i.amount) || 0), 0).toFixed(2)}
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total TDS Amount</label>
+                      <div className="text-sm font-bold text-red-500">
+                        -₹{(grnForm.items || []).reduce((sum, i) => sum + (i.tdsAmount || 0), 0).toFixed(2)}
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total GST Amount</label>
+                      <div className="text-sm font-bold text-emerald-500">
+                        +₹{(grnForm.items || []).reduce((sum, i) => sum + (i.gstAmount || 0), 0).toFixed(2)}
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Net Total Amount</label>
+                      <div className="text-lg font-black text-indigo-700">
+                        ₹{(Number(grnForm.amount) || 0).toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-4 pt-4 border-t border-slate-200/50">
+                    <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                      <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block mb-1">Total CGST</label>
+                      <div className="text-xs font-bold text-slate-600">₹{(grnForm.items || []).reduce((sum, i) => sum + (i.cgst || 0), 0).toFixed(2)}</div>
+                    </div>
+                    <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                      <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block mb-1">Total SGST</label>
+                      <div className="text-xs font-bold text-slate-600">₹{(grnForm.items || []).reduce((sum, i) => sum + (i.sgst || 0), 0).toFixed(2)}</div>
+                    </div>
+                    <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                      <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block mb-1">Total IGST</label>
+                      <div className="text-xs font-bold text-slate-600">₹{(grnForm.items || []).reduce((sum, i) => sum + (i.igst || 0), 0).toFixed(2)}</div>
+                    </div>
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">GST</label>
-                  <select 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
-                    value={grnForm.gst}
-                    onChange={e => setGrnForm({ ...grnForm, gst: Number(e.target.value) })}
-                    disabled={isGrnReadOnly}
-                  >
-                    <option value="0">Select GST</option>
-                    {(masters['GST'] || []).map(g => <option key={g.id} value={g.rate}>{g.name}</option>)}
-                  </select>
-                </div>
+
               </>
             )}
 
@@ -1160,6 +1308,31 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                   </select>
                 </div>
 
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">TDS</label>
+                  <select 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                    value={invoiceForm.tds}
+                    onChange={e => setInvoiceForm({ ...invoiceForm, tds: Number(e.target.value) })}
+                    disabled={isInvoiceReadOnly}
+                  >
+                    <option value="0">Select TDS</option>
+                    {(masters['TDS'] || []).map(t => <option key={t.id} value={t.rate}>{t.name}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">GST</label>
+                  <select 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                    value={invoiceForm.gst}
+                    onChange={e => setInvoiceForm({ ...invoiceForm, gst: Number(e.target.value) })}
+                    disabled={isInvoiceReadOnly}
+                  >
+                    <option value="0">Select GST</option>
+                    {(masters['GST'] || []).map(g => <option key={g.id} value={g.rate}>{g.name}</option>)}
+                  </select>
+                </div>
+
                 <div className="col-span-2 space-y-4 mt-4">
                   <div className="flex justify-between items-center">
                     <h4 className="text-sm font-black text-slate-700 uppercase tracking-wider">Invoice Items</h4>
@@ -1204,24 +1377,33 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                                 }
                                 const updatedItems = [...(invoiceForm.items || [])];
                                 const index = updatedItems.findIndex(i => i.id === grnItem.id);
-                                
+                                const tdsPct = invoiceForm.tds ?? 0;
+                                const gstPct = invoiceForm.gst ?? 0;
                                 const base = qty * grnItem.rate;
-                                const tdsAmount = base * ((grnItem.tds || 0) / 100);
-                                const gstAmount = base * ((grnItem.gst || 0) / 100);
+                                const tdsAmount = base * (tdsPct / 100);
+                                const gstAmount = base * (gstPct / 100);
                                 const totalAmount = base + gstAmount - tdsAmount;
-                                
-                                const newItem: ItemLine = { 
-                                  ...grnItem, 
-                                  quantity: qty, 
+                                const rc = rateContracts.find(r => r.id === selectedGRN.rateContractId);
+                                const vendor = rc ? (masters.Vendor ?? []).find((v: any) => v.id === rc.vendorId) : null;
+                                const center = (masters.Center ?? []).find((c: any) => c.name === invoiceForm.location);
+                                const isIntraState = vendor && center && (vendor as any).state === (center as any).state;
+                                const newItem: ItemLine = {
+                                  ...grnItem,
+                                  quantity: qty,
                                   amount: base,
+                                  tds: tdsPct,
+                                  gst: gstPct,
                                   tdsAmount,
                                   gstAmount,
-                                  totalAmount
+                                  totalAmount,
+                                  cgst: isIntraState ? gstAmount / 2 : 0,
+                                  sgst: isIntraState ? gstAmount / 2 : 0,
+                                  igst: isIntraState ? 0 : gstAmount
                                 };
                                 if (index > -1) updatedItems[index] = newItem;
                                 else updatedItems.push(newItem);
-                                
-                                setInvoiceForm({ ...invoiceForm, items: updatedItems });
+                                const amount = updatedItems.reduce((sum, i) => sum + (Number(i.totalAmount) || 0), 0);
+                                setInvoiceForm({ ...invoiceForm, items: updatedItems, amount });
                               }}
                             />
                             {invItem.quantity > grnItem.quantity && <div className="text-[8px] text-red-500 font-bold uppercase">Exceeds GRN Qty</div>}
@@ -1236,29 +1418,49 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">TDS</label>
-                  <select 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
-                    value={invoiceForm.tds}
-                    onChange={e => setInvoiceForm({ ...invoiceForm, tds: Number(e.target.value) })}
-                    disabled={isInvoiceReadOnly}
-                  >
-                    <option value="0">Select TDS</option>
-                    {(masters['TDS'] || []).map(t => <option key={t.id} value={t.rate}>{t.name}</option>)}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">GST</label>
-                  <select 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
-                    value={invoiceForm.gst}
-                    onChange={e => setInvoiceForm({ ...invoiceForm, gst: Number(e.target.value) })}
-                    disabled={isInvoiceReadOnly}
-                  >
-                    <option value="0">Select GST</option>
-                    {(masters['GST'] || []).map(g => <option key={g.id} value={g.rate}>{g.name}</option>)}
-                  </select>
+                {/* Tax & Amount Summary (INR) - Invoice */}
+                <div className="col-span-2 bg-slate-50 p-6 rounded-3xl border border-slate-200 mt-4 space-y-4">
+                  <h4 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] border-b border-slate-200 pb-2">Tax & Amount Summary (INR)</h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Base Amount</label>
+                      <div className="text-sm font-bold text-slate-700">
+                        ₹{(invoiceForm.items || []).reduce((sum, i) => sum + (Number(i.amount) || 0), 0).toFixed(2)}
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total TDS Amount</label>
+                      <div className="text-sm font-bold text-red-500">
+                        -₹{(invoiceForm.items || []).reduce((sum, i) => sum + (i.tdsAmount || 0), 0).toFixed(2)}
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total GST Amount</label>
+                      <div className="text-sm font-bold text-emerald-500">
+                        +₹{(invoiceForm.items || []).reduce((sum, i) => sum + (i.gstAmount || 0), 0).toFixed(2)}
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Net Total Amount</label>
+                      <div className="text-lg font-black text-indigo-700">
+                        ₹{(invoiceForm.items || []).reduce((sum, i) => sum + (Number(i.totalAmount) || 0), 0).toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-4 pt-4 border-t border-slate-200/50">
+                    <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                      <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block mb-1">Total CGST</label>
+                      <div className="text-xs font-bold text-slate-600">₹{(invoiceForm.items || []).reduce((sum, i) => sum + (i.cgst || 0), 0).toFixed(2)}</div>
+                    </div>
+                    <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                      <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block mb-1">Total SGST</label>
+                      <div className="text-xs font-bold text-slate-600">₹{(invoiceForm.items || []).reduce((sum, i) => sum + (i.sgst || 0), 0).toFixed(2)}</div>
+                    </div>
+                    <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                      <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block mb-1">Total IGST</label>
+                      <div className="text-xs font-bold text-slate-600">₹{(invoiceForm.items || []).reduce((sum, i) => sum + (i.igst || 0), 0).toFixed(2)}</div>
+                    </div>
+                  </div>
                 </div>
               </>
             )}
@@ -1454,7 +1656,9 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                                 remarks: rc.remarks || '',
                                 items: (rc.items || []).map(item => ({ ...item, quantity: 0, amount: 0 })),
                                 amount: 0,
-                                attachments: []
+                                attachments: [],
+                                tds: 0,
+                                gst: 0
                               });
                               setShowForm(true);
                             }}
@@ -1545,7 +1749,21 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                             <button 
                               onClick={() => { 
                                 setSelectedRC(rc || null); 
-                                setSelectedGRN(grn); 
+                                setSelectedGRN(grn);
+                                setInvoiceForm({
+                                  entityName: grn.entityName,
+                                  vendorSiteId: grn.vendorSiteId || '',
+                                  location: grn.location || '',
+                                  shippingAddressId: grn.shippingAddressId || '',
+                                  billingAddressId: grn.billingAddressId || '',
+                                  department: grn.department || '',
+                                  subDepartment: grn.subDepartment || '',
+                                  tds: grn.tds ?? 0,
+                                  gst: grn.gst ?? 0,
+                                  items: (grn.items || []).map(i => ({ ...i })),
+                                  amount: Number(grn.amount) || 0,
+                                  attachments: []
+                                });
                                 setShowForm(true); 
                               }}
                               className="text-xs font-black text-indigo-600 hover:underline"
@@ -1578,7 +1796,7 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                 );
               })}
 
-              {viewMode === 'Invoice' && invoices.map(inv => (
+              {viewMode === 'Invoice' && rcInvoices.map(inv => (
                 <tr key={inv.id} className="hover:bg-slate-50/50 transition-colors">
                   <td className="px-6 py-4">
                     <div className="text-sm font-black text-slate-900">{inv.id}</div>
@@ -1661,7 +1879,7 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
 
               {((viewMode === 'RC' && rateContracts.length === 0) || 
                 (viewMode === 'GRN' && rcGrns.length === 0) || 
-                (viewMode === 'Invoice' && invoices.length === 0)) && (
+                (viewMode === 'Invoice' && rcInvoices.length === 0)) && (
                 <tr>
                   <td colSpan={4} className="px-6 py-12 text-center text-slate-400 font-medium">
                     No records found for {viewMode}

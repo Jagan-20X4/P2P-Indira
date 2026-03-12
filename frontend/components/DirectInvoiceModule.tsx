@@ -47,8 +47,8 @@ const DirectInvoiceModule: React.FC<DirectInvoiceModuleProps> = ({ masters, curr
   // Recalculate all items when top-level TDS or GST changes
   useEffect(() => {
     setInvoiceForm((prev: any) => {
-      const vendor = masters.Vendor.find(v => v.id === prev.vendorId);
-      const center = masters.Center.find(c => c.name === prev.centerNames?.[0]);
+      const vendor = (masters.Vendor ?? []).find(v => v.id === prev.vendorId);
+      const center = (masters.Center ?? []).find(c => c.name === prev.centerNames?.[0]);
       const isIntraState = vendor && center && vendor.state === center.state;
       const tdsPercent = prev.tds || 0;
       const gstPercent = prev.gst || 0;
@@ -109,8 +109,8 @@ const DirectInvoiceModule: React.FC<DirectInvoiceModuleProps> = ({ masters, curr
 
   const updateItem = (id: string, field: keyof ItemLine, value: any) => {
     setInvoiceForm((prev: any) => {
-      const vendor = masters.Vendor.find(v => v.id === prev.vendorId);
-      const center = masters.Center.find(c => c.name === prev.centerNames?.[0]);
+      const vendor = (masters.Vendor ?? []).find(v => v.id === prev.vendorId);
+      const center = (masters.Center ?? []).find(c => c.name === prev.centerNames?.[0]);
       const isIntraState = vendor && center && vendor.state === center.state;
       const tdsPercent = prev.tds || 0;
       const gstPercent = prev.gst || 0;
@@ -440,7 +440,7 @@ const DirectInvoiceModule: React.FC<DirectInvoiceModuleProps> = ({ masters, curr
                 value={invoiceForm.entityName}
                 onChange={e => setInvoiceForm({ ...invoiceForm, entityName: e.target.value })}
               >
-                {masters.Entity.map(e => <option key={e.id} value={e.name}>{e.name}</option>)}
+                {(masters.Entity ?? []).map(e => <option key={e.id} value={e.name}>{e.name}</option>)}
               </select>
             </div>
             <div className="space-y-2">
@@ -451,7 +451,7 @@ const DirectInvoiceModule: React.FC<DirectInvoiceModuleProps> = ({ masters, curr
                 onChange={e => setInvoiceForm({ ...invoiceForm, vendorId: e.target.value, vendorSiteId: '' })}
               >
                 <option value="">Select Vendor</option>
-                {masters.Vendor.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                {(masters.Vendor ?? []).map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
               </select>
             </div>
             <div className="space-y-2">
@@ -463,7 +463,7 @@ const DirectInvoiceModule: React.FC<DirectInvoiceModuleProps> = ({ masters, curr
                 disabled={!invoiceForm.vendorId}
               >
                 <option value="">Select Vendor Site</option>
-                {masters['Vendor Site']?.filter(s => s.vendorId === invoiceForm.vendorId).map(s => (
+                {(masters['Vendor Site'] ?? []).filter(s => s.vendorId === invoiceForm.vendorId).map(s => (
                   <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
                 ))}
               </select>
@@ -476,7 +476,7 @@ const DirectInvoiceModule: React.FC<DirectInvoiceModuleProps> = ({ masters, curr
                 onChange={e => setInvoiceForm({ ...invoiceForm, shippingAddressId: e.target.value })}
               >
                 <option value="">Select Shipping Address</option>
-                {masters.Entity.flatMap(ent => ent.shippingAddresses || []).map((addr: any) => (
+                {(masters.Entity ?? []).flatMap(ent => ent.shippingAddresses || []).map((addr: any) => (
                   <option key={addr.id} value={addr.id}>{addr.address}</option>
                 ))}
               </select>
@@ -489,7 +489,7 @@ const DirectInvoiceModule: React.FC<DirectInvoiceModuleProps> = ({ masters, curr
                 onChange={e => setInvoiceForm({ ...invoiceForm, billingAddressId: e.target.value })}
               >
                 <option value="">Select Billing Address</option>
-                {masters.Entity.flatMap(ent => ent.billingAddresses || []).map((addr: any) => (
+                {(masters.Entity ?? []).flatMap(ent => ent.billingAddresses || []).map((addr: any) => (
                   <option key={addr.id} value={addr.id}>{addr.address}</option>
                 ))}
               </select>
@@ -587,7 +587,7 @@ const DirectInvoiceModule: React.FC<DirectInvoiceModuleProps> = ({ masters, curr
                 onChange={e => setInvoiceForm({ ...invoiceForm, tds: Number(e.target.value) })}
               >
                 <option value="0">Select TDS</option>
-                {masters.TDS.map(t => <option key={t.id} value={t.rate}>{t.name}</option>)}
+                {(masters.TDS ?? []).map(t => <option key={t.id} value={t.rate}>{t.name}</option>)}
               </select>
             </div>
             <div className="space-y-2">
@@ -598,7 +598,7 @@ const DirectInvoiceModule: React.FC<DirectInvoiceModuleProps> = ({ masters, curr
                 onChange={e => setInvoiceForm({ ...invoiceForm, gst: Number(e.target.value) })}
               >
                 <option value="0">Select GST</option>
-                {masters.GST.map(g => <option key={g.id} value={g.rate}>{g.name}</option>)}
+                {(masters.GST ?? []).map(g => <option key={g.id} value={g.rate}>{g.name}</option>)}
               </select>
             </div>
 
@@ -634,7 +634,7 @@ const DirectInvoiceModule: React.FC<DirectInvoiceModuleProps> = ({ masters, curr
                           onChange={e => updateItem(item.id, 'itemName', e.target.value)}
                         >
                           <option value="">Select Item</option>
-                          {masters.Item.filter(i => !invoiceForm.items?.some((selected: any) => selected.id !== item.id && selected.itemName === i.name)).map(i => <option key={i.id} value={i.name}>{i.name}</option>)}
+                          {(masters.Item ?? []).filter(i => !invoiceForm.items?.some((selected: any) => selected.id !== item.id && selected.itemName === i.name)).map(i => <option key={i.id} value={i.name}>{i.name}</option>)}
                         </select>
                       </div>
                       <div className="col-span-1 space-y-1">
@@ -774,7 +774,7 @@ const DirectInvoiceModule: React.FC<DirectInvoiceModuleProps> = ({ masters, curr
                 invoices.map(inv => (
                   <tr key={inv.id} className="hover:bg-slate-50/50 transition-colors">
                     <td className="px-6 py-4 font-black text-slate-700">{inv.id}</td>
-                    <td className="px-6 py-4 font-bold text-slate-600">{masters.Vendor.find(v => v.id === (inv as any).vendorId)?.name || 'Unknown'}</td>
+                    <td className="px-6 py-4 font-bold text-slate-600">{(masters.Vendor ?? []).find(v => v.id === (inv as any).vendorId)?.name || 'Unknown'}</td>
                     <td className="px-6 py-4 text-slate-500 font-medium">{new Date(inv.createdAt).toLocaleDateString()}</td>
                     <td className="px-6 py-4 font-black text-indigo-600">₹{inv.amount.toFixed(2)}</td>
                     <td className="px-6 py-4">

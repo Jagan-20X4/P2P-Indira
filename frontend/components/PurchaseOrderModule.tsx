@@ -113,8 +113,8 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
   // Recalculate all items when top-level TDS or GST changes
   useEffect(() => {
     setPoForm(prev => {
-      const vendor = masters.Vendor.find(v => v.id === prev.vendorId);
-      const center = masters.Center.find(c => c.name === prev.centerNames?.[0]);
+      const vendor = (masters.Vendor ?? []).find(v => v.id === prev.vendorId);
+      const center = (masters.Center ?? []).find(c => c.name === prev.centerNames?.[0]);
       const isIntraState = vendor && center && vendor.state === center.state;
       const tdsPercent = prev.tds || 0;
       const gstPercent = prev.gst || 0;
@@ -169,8 +169,8 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
 
   const updateItem = (id: string, field: keyof ItemLine, value: any) => {
     setPoForm(prev => {
-      const vendor = masters.Vendor.find(v => v.id === prev.vendorId);
-      const center = masters.Center.find(c => c.name === prev.centerNames?.[0]);
+      const vendor = (masters.Vendor ?? []).find(v => v.id === prev.vendorId);
+      const center = (masters.Center ?? []).find(c => c.name === prev.centerNames?.[0]);
       const isIntraState = vendor && center && vendor.state === center.state;
       const tdsPercent = prev.tds || 0;
       const gstPercent = prev.gst || 0;
@@ -180,6 +180,15 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
         items: (prev.items || []).map(item => {
           if (item.id === id) {
             const updated = { ...item, [field]: value };
+            if (field === 'itemName') {
+              const itemMaster = (masters.Item ?? []).find((i: any) => i.name === value);
+              if (itemMaster) {
+                const coa = (masters.COA ?? []).find((c: any) => c.id === itemMaster.coaId);
+                updated.coaCode = (coa?.code ?? itemMaster.coaCode ?? '') || '';
+              } else {
+                updated.coaCode = '';
+              }
+            }
             if (field === 'quantity' || field === 'rate' || field === 'tds' || field === 'gst') {
               const qty = updated.quantity || 0;
               const rate = updated.rate || 0;
@@ -702,7 +711,7 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
                     value={poForm.entityName}
                     onChange={e => setPoForm({ ...poForm, entityName: e.target.value })}
                   >
-                    {masters.Entity.map(e => <option key={e.id} value={e.name}>{e.name}</option>)}
+                    {(masters.Entity ?? []).map(e => <option key={e.id} value={e.name}>{e.name}</option>)}
                   </select>
                 </div>
                 <div className="space-y-2">
@@ -713,7 +722,7 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
                     onChange={e => setPoForm({ ...poForm, vendorId: e.target.value, vendorSiteId: '' })}
                   >
                     <option value="">Select Vendor</option>
-                    {masters.Vendor.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                    {(masters.Vendor ?? []).map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
                   </select>
                 </div>
                 <div className="space-y-2">
@@ -725,7 +734,7 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
                     disabled={!poForm.vendorId}
                   >
                     <option value="">Select Vendor Site</option>
-                    {masters['Vendor Site']?.filter(s => s.vendorId === poForm.vendorId).map(s => (
+                    {(masters['Vendor Site'] ?? []).filter(s => s.vendorId === poForm.vendorId).map(s => (
                       <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
                     ))}
                   </select>
@@ -738,7 +747,7 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
                     onChange={e => setPoForm({ ...poForm, shippingAddressId: e.target.value })}
                   >
                     <option value="">Select Shipping Address</option>
-                    {masters.Entity.flatMap(ent => ent.shippingAddresses || []).map((addr: any) => (
+                    {(masters.Entity ?? []).flatMap(ent => ent.shippingAddresses || []).map((addr: any) => (
                       <option key={addr.id} value={addr.id}>{addr.address}</option>
                     ))}
                   </select>
@@ -751,7 +760,7 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
                     onChange={e => setPoForm({ ...poForm, billingAddressId: e.target.value })}
                   >
                     <option value="">Select Billing Address</option>
-                    {masters.Entity.flatMap(ent => ent.billingAddresses || []).map((addr: any) => (
+                    {(masters.Entity ?? []).flatMap(ent => ent.billingAddresses || []).map((addr: any) => (
                       <option key={addr.id} value={addr.id}>{addr.address}</option>
                     ))}
                   </select>
@@ -764,7 +773,7 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
                     onChange={e => setPoForm({ ...poForm, tds: Number(e.target.value) })}
                   >
                     <option value="0">Select TDS</option>
-                    {masters.TDS.map(t => <option key={t.id} value={t.rate}>{t.name}</option>)}
+                    {(masters.TDS ?? []).map(t => <option key={t.id} value={t.rate}>{t.name}</option>)}
                   </select>
                 </div>
                 <div className="space-y-2">
@@ -775,7 +784,7 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
                     onChange={e => setPoForm({ ...poForm, gst: Number(e.target.value) })}
                   >
                     <option value="0">Select GST</option>
-                    {masters.GST.map(g => <option key={g.id} value={g.rate}>{g.name}</option>)}
+                    {(masters.GST ?? []).map(g => <option key={g.id} value={g.rate}>{g.name}</option>)}
                   </select>
                 </div>
                 <div className="space-y-2">
@@ -971,19 +980,18 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
                               onChange={e => updateItem(item.id, 'itemName', e.target.value)}
                             >
                               <option value="">Select Item</option>
-                              {masters.Item.filter(i => !poForm.items?.some(selected => selected.id !== item.id && selected.itemName === i.name)).map(i => <option key={i.id} value={i.name}>{i.name}</option>)}
+                              {(masters.Item ?? []).filter(i => !poForm.items?.some(selected => selected.id !== item.id && selected.itemName === i.name)).map(i => <option key={i.id} value={i.name}>{i.name}</option>)}
                             </select>
                           </div>
                           <div className="col-span-2 space-y-1">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">GL Code</label>
-                            <select 
-                              className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
-                              value={item.coaCode}
-                              onChange={e => updateItem(item.id, 'coaCode', e.target.value)}
-                            >
-                              <option value="">Select GL</option>
-                              {masters.COA.map(coa => <option key={coa.id} value={coa.code}>{coa.code}</option>)}
-                            </select>
+                            <input
+                              type="text"
+                              readOnly
+                              className="w-full bg-slate-100 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-600 cursor-not-allowed"
+                              value={item.coaCode ? `${item.coaCode} (from Item master)` : '— Select item for COA mapping'}
+                              title={item.coaCode ? 'Locked from Masters → Item → COA Mapping' : 'Select an item to see mapped GL code'}
+                            />
                           </div>
                           <div className="col-span-2 space-y-1">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Rate (INR)</label>
@@ -1095,64 +1103,37 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
             {/* GRN Form Fields */}
             {selectedPO && !selectedGRN && (
               <>
-                <div className="col-span-2 bg-indigo-50 p-4 rounded-2xl border border-indigo-100 mb-4">
-                  <p className="text-sm font-bold text-indigo-900">Auto-populated from {selectedPO.id}</p>
-                  <div className="mt-2 space-y-1">
-                    <div className="text-xs"><span className="text-indigo-400 uppercase font-black">Entity:</span> {masters.Entity.find(e => e.id === selectedPO.entityId)?.name}</div>
-                    <div className="text-xs"><span className="text-indigo-400 uppercase font-black">Vendor:</span> {masters.Vendor.find(v => v.id === selectedPO.vendorId)?.name}</div>
-                    <div className="text-xs"><span className="text-indigo-400 uppercase font-black">Vendor Site:</span> {masters['Vendor Site']?.find(s => s.id === selectedPO.vendorSiteId)?.name || 'N/A'}</div>
-                    <div className="text-xs"><span className="text-indigo-400 uppercase font-black">Centers:</span> {(selectedPO.centerNames || []).join(', ')}</div>
+                <div className="col-span-2 bg-indigo-50 p-6 rounded-2xl border border-indigo-100 mb-4 space-y-4">
+                  <p className="text-sm font-bold text-indigo-900">Auto-populated from {selectedPO.id} (read-only — same as PO at creation)</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-xs">
+                    <div><span className="text-indigo-400 uppercase font-black">Entity:</span> {selectedPO.entityName || (masters.Entity ?? []).find((e: any) => e.name === selectedPO.entityName)?.name}</div>
+                    <div><span className="text-indigo-400 uppercase font-black">Vendor:</span> {(masters.Vendor ?? []).find((v: any) => v.id === selectedPO.vendorId)?.name || '—'}</div>
+                    <div><span className="text-indigo-400 uppercase font-black">Vendor Site:</span> {(masters['Vendor Site'] ?? []).find((s: any) => s.id === selectedPO.vendorSiteId)?.name || 'N/A'}</div>
+                    <div><span className="text-indigo-400 uppercase font-black">Centers:</span> {(selectedPO.centerNames || []).join(', ') || '—'}</div>
+                    <div className="sm:col-span-2"><span className="text-indigo-400 uppercase font-black">Shipping Address:</span> {(() => { const addr = (masters.Entity ?? []).flatMap((ent: any) => (ent.shippingAddresses || []).map((a: any) => ({ ...a }))).find((a: any) => a.id === selectedPO.shippingAddressId); return addr?.address || '—'; })()}</div>
+                    <div className="sm:col-span-2"><span className="text-indigo-400 uppercase font-black">Billing Address:</span> {(() => { const addr = (masters.Entity ?? []).flatMap((ent: any) => (ent.billingAddresses || []).map((a: any) => ({ ...a }))).find((a: any) => a.id === selectedPO.billingAddressId); return addr?.address || '—'; })()}</div>
+                    <div><span className="text-indigo-400 uppercase font-black">Validity From:</span> {selectedPO.validFrom || '—'}</div>
+                    <div><span className="text-indigo-400 uppercase font-black">Validity To:</span> {selectedPO.validTo || '—'}</div>
+                    <div><span className="text-indigo-400 uppercase font-black">Required Date:</span> {selectedPO.requiredDate || '—'}</div>
+                    <div><span className="text-indigo-400 uppercase font-black">Department:</span> {selectedPO.department || '—'}</div>
+                    <div><span className="text-indigo-400 uppercase font-black">Sub-Department:</span> {selectedPO.subDepartment || '—'}</div>
+                    <div><span className="text-indigo-400 uppercase font-black">Payment Terms:</span> {selectedPO.paymentTerms || '—'}</div>
+                    <div><span className="text-indigo-400 uppercase font-black">Terms & Conditions:</span> {selectedPO.termsAndConditionsId ? ((masters['Terms & Conditions'] ?? []).find((t: any) => t.id === selectedPO.termsAndConditionsId)?.name) || '—' : '—'}</div>
+                    <div><span className="text-indigo-400 uppercase font-black">TDS %:</span> {selectedPO.tds != null ? selectedPO.tds : '0'}</div>
+                    <div><span className="text-indigo-400 uppercase font-black">GST %:</span> {selectedPO.gst != null ? selectedPO.gst : '0'}</div>
+                    <div><span className="text-indigo-400 uppercase font-black">Transaction Type:</span> {selectedPO.transactionType || '—'}</div>
+                    <div><span className="text-indigo-400 uppercase font-black">Frequency:</span> {selectedPO.frequency || '—'}</div>
+                    <div className="sm:col-span-2"><span className="text-indigo-400 uppercase font-black">Remarks:</span> {selectedPO.remarks || '—'}</div>
                   </div>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Vendor Site</label>
-                  <select 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
-                    value={grnForm.vendorSiteId}
-                    onChange={e => setGrnForm({ ...grnForm, vendorSiteId: e.target.value })}
-                  >
-                    <option value="">Select Vendor Site</option>
-                    {masters['Vendor Site']?.filter(s => s.vendorId === selectedPO.vendorId).map(s => (
-                      <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Shipping Address</label>
-                  <select 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
-                    value={grnForm.shippingAddressId}
-                    onChange={e => setGrnForm({ ...grnForm, shippingAddressId: e.target.value })}
-                  >
-                    <option value="">Select Shipping Address</option>
-                    {masters.Entity.flatMap(ent => ent.shippingAddresses || []).map((addr: any) => (
-                      <option key={addr.id} value={addr.id}>{addr.address}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Billing Address</label>
-                  <select 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
-                    value={grnForm.billingAddressId}
-                    onChange={e => setGrnForm({ ...grnForm, billingAddressId: e.target.value })}
-                  >
-                    <option value="">Select Billing Address</option>
-                    {masters.Entity.flatMap(ent => ent.billingAddresses || []).map((addr: any) => (
-                      <option key={addr.id} value={addr.id}>{addr.address}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Location</label>
-                  <select 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
-                    value={grnForm.location}
-                    onChange={e => setGrnForm({ ...grnForm, location: e.target.value })}
-                  >
-                    <option value="">Select Location</option>
-                    {(selectedPO.centerNames || []).map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
+                  <div className="pt-3 border-t border-indigo-200/60">
+                    <div className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-1">Tax & Amount Summary (from PO)</div>
+                    <div className="flex flex-wrap gap-4 text-xs font-bold text-slate-700">
+                      <span>Base: ₹{(selectedPO.items || []).reduce((s, i) => s + (i.amount || 0), 0).toFixed(2)}</span>
+                      <span className="text-red-500">TDS: -₹{(selectedPO.items || []).reduce((s, i) => s + (i.tdsAmount || 0), 0).toFixed(2)}</span>
+                      <span className="text-emerald-600">GST: +₹{(selectedPO.items || []).reduce((s, i) => s + (i.gstAmount || 0), 0).toFixed(2)}</span>
+                      <span className="text-indigo-600">Net: ₹{(Number(selectedPO.amount) || 0).toFixed(2)}</span>
+                    </div>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Invoice Number</label>
@@ -1161,6 +1142,7 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
                     value={grnForm.invoiceNumber}
                     onChange={e => setGrnForm({ ...grnForm, invoiceNumber: e.target.value })}
+                    placeholder="Enter vendor invoice number"
                   />
                 </div>
                 
@@ -1267,7 +1249,7 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
                     onChange={e => setInvoiceForm({ ...invoiceForm, vendorSiteId: e.target.value })}
                   >
                     <option value="">Select Vendor Site</option>
-                    {masters['Vendor Site']?.filter(s => s.vendorId === selectedPO.vendorId).map(s => (
+                    {(masters['Vendor Site'] ?? []).filter(s => s.vendorId === selectedPO.vendorId).map(s => (
                       <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
                     ))}
                   </select>
@@ -1280,7 +1262,7 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
                     onChange={e => setInvoiceForm({ ...invoiceForm, shippingAddressId: e.target.value })}
                   >
                     <option value="">Select Shipping Address</option>
-                    {masters.Entity.flatMap(ent => ent.shippingAddresses || []).map((addr: any) => (
+                    {(masters.Entity ?? []).flatMap(ent => ent.shippingAddresses || []).map((addr: any) => (
                       <option key={addr.id} value={addr.id}>{addr.address}</option>
                     ))}
                   </select>
@@ -1293,7 +1275,7 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
                     onChange={e => setInvoiceForm({ ...invoiceForm, billingAddressId: e.target.value })}
                   >
                     <option value="">Select Billing Address</option>
-                    {masters.Entity.flatMap(ent => ent.billingAddresses || []).map((addr: any) => (
+                    {(masters.Entity ?? []).flatMap(ent => ent.billingAddresses || []).map((addr: any) => (
                       <option key={addr.id} value={addr.id}>{addr.address}</option>
                     ))}
                   </select>
@@ -1472,7 +1454,7 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
                     <div className="text-[10px] text-slate-400 font-bold">{new Date(po.createdAt).toLocaleDateString()}</div>
                   </td>
                   <td className="px-6 py-4">
-                    <div className="text-sm font-bold text-slate-700">{masters.Vendor.find(v => v.id === po.vendorId)?.name}</div>
+                    <div className="text-sm font-bold text-slate-700">{(masters.Vendor ?? []).find(v => v.id === po.vendorId)?.name}</div>
                     <div className="text-xs text-slate-500">{po.items.length} Items • {po.centerNames.length} Centers • ₹{(Number(po.amount) || 0).toFixed(2)}</div>
                   </td>
                   <td className="px-6 py-4">

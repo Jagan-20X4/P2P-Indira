@@ -173,6 +173,21 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
     });
   }, [invoiceForm.tds, invoiceForm.gst, invoiceForm.location, selectedGRN?.id, rateContracts]);
 
+  const updateGrnItem = (itemId: string, field: 'quantity' | 'remarks', value: number | string) => {
+    setGrnForm(prev => {
+      const items = (prev.items || []).map(i => {
+        if (i.id !== itemId) return i;
+        if (field === 'quantity') {
+          const qty = Number(value) || 0;
+          const rate = Number(i.rate) || 0;
+          return { ...i, quantity: qty, amount: qty * rate };
+        }
+        return { ...i, remarks: String(value ?? '') };
+      });
+      return { ...prev, items };
+    });
+  };
+
   const downloadTemplate = (type: 'RC' | 'GRN' | 'Invoice') => {
     let headers = '';
     if (type === 'RC') headers = 'Item Name,Center,Rate,Remarks';
@@ -352,8 +367,8 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
       amount: 0, remarks: '', attachments: [],
       shippingAddressId: '', billingAddressId: ''
     });
-    setGrnForm({ vendorSiteId: '', location: '', items: [], amount: 0, remarks: '', attachments: [], shippingAddressId: '', billingAddressId: '', tds: 0, gst: 0 });
-    setInvoiceForm({ vendorSiteId: '', location: '', attachments: [], shippingAddressId: '', billingAddressId: '', tds: 0, gst: 0, items: [] });
+    setGrnForm({ vendorSiteId: '', location: '', items: [], amount: 0, remarks: '', attachments: [], shippingAddressId: '', billingAddressId: '', tds: 0, gst: 0, invoiceNumber: '', invoiceDate: '' });
+    setInvoiceForm({ vendorSiteId: '', location: '', attachments: [], shippingAddressId: '', billingAddressId: '', tds: 0, gst: 0, items: [], invoiceNumber: '', invoiceDate: '' });
     setSelectedRC(null);
     setSelectedGRN(null);
   };
@@ -925,16 +940,6 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                               disabled={isApprovedRcView}
                             />
                           </div>
-                          <div className="col-span-1 space-y-1">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Qty</label>
-                            <input 
-                              type="number"
-                              className={`w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold ${isApprovedRcView ? 'bg-slate-100 cursor-not-allowed' : 'bg-white'}`}
-                              value={item.quantity}
-                              onChange={e => updateItem(item.id, 'quantity', Number(e.target.value))}
-                              disabled={isApprovedRcView}
-                            />
-                          </div>
                           <div className="col-span-2 space-y-1">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Base Amount</label>
                             <input 
@@ -944,7 +949,7 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                               value={(Number(item.amount) || 0).toFixed(2)}
                             />
                           </div>
-                          <div className="col-span-2 space-y-1">
+                          <div className="col-span-3 space-y-1">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Remarks <span className="text-red-500">*</span></label>
                             <input 
                               type="text"
@@ -1021,6 +1026,29 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                     <div className="text-xs"><span className="text-indigo-400 uppercase font-black">Centers:</span> {Array.from(new Set(selectedRC.items.flatMap(i => getItemCenters(i)))).join(', ')}</div>
                   </div>
                 </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-sm font-black text-slate-600 uppercase tracking-wider">Invoice No</label>
+                    <input
+                      type="text"
+                      placeholder="Enter invoice number"
+                      className="w-full min-h-[56px] bg-white border border-slate-200 rounded-xl px-4 py-4 text-base font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-50"
+                      value={grnForm.invoiceNumber ?? ''}
+                      onChange={e => setGrnForm({ ...grnForm, invoiceNumber: e.target.value })}
+                      disabled={!!grnForm.id}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-black text-slate-600 uppercase tracking-wider">Invoice Date</label>
+                    <input
+                      type="date"
+                      className="w-full min-h-[56px] bg-white border border-slate-200 rounded-xl px-4 py-4 text-base font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-50"
+                      value={grnForm.invoiceDate ?? ''}
+                      onChange={e => setGrnForm({ ...grnForm, invoiceDate: e.target.value })}
+                      disabled={!!grnForm.id}
+                    />
+                  </div>
+                </div>
                 <div className="space-y-2">
                   <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Vendor Site</label>
                   <select 
@@ -1076,6 +1104,21 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                   </select>
                 </div>
 
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-sm font-black text-slate-600 uppercase tracking-wider">Department</label>
+                    <div className="w-full min-h-[56px] bg-slate-50 border border-slate-200 rounded-xl px-4 py-4 text-base font-bold text-slate-700">
+                      {grnForm.department || '—'}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-black text-slate-600 uppercase tracking-wider">Subdepartment</label>
+                    <div className="w-full min-h-[56px] bg-slate-50 border border-slate-200 rounded-xl px-4 py-4 text-base font-bold text-slate-700">
+                      {grnForm.subDepartment || '—'}
+                    </div>
+                  </div>
+                </div>
+
                 <div className="space-y-2">
                   <label className="text-xs font-black text-slate-500 uppercase tracking-wider">TDS</label>
                   <select 
@@ -1100,6 +1143,21 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                     {(masters['GST'] || []).map(g => <option key={g.id} value={g.rate}>{g.name}</option>)}
                   </select>
                 </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-sm font-black text-slate-600 uppercase tracking-wider">Payment Terms</label>
+                    <div className="w-full min-h-[56px] bg-slate-50 border border-slate-200 rounded-xl px-4 py-4 text-base font-bold text-slate-700">
+                      {selectedRC?.paymentTerms || '—'}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-black text-slate-600 uppercase tracking-wider">Terms & Conditions</label>
+                    <div className="w-full min-h-[56px] bg-slate-50 border border-slate-200 rounded-xl px-4 py-4 text-base font-bold text-slate-700">
+                      {(masters['Terms & Conditions'] || []).find((tc: any) => tc.id === selectedRC?.termsAndConditionsId)?.name || selectedRC?.termsAndConditionsId || '—'}
+                    </div>
+                  </div>
+                </div>
                 
                 <div className="col-span-2 space-y-4 mt-4">
                   <div className="flex justify-between items-center">
@@ -1120,25 +1178,44 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                     </div>
                   </div>
                   <div className="space-y-3">
-                    {selectedRC.items.map((rcItem) => {
-                      const baseAmount = (Number(rcItem.rate) || 0) * (Number(rcItem.quantity) || 0);
-                      return (
-                        <div key={rcItem.id} className="grid grid-cols-12 gap-4 items-end bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                          <div className="col-span-4 space-y-1">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Item Name</label>
-                            <div className="text-sm font-bold text-slate-700">{rcItem.itemName}</div>
-                          </div>
-                          <div className="col-span-4 space-y-1">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Rate (INR)</label>
-                            <div className="text-sm font-bold text-slate-700">₹{(Number(rcItem.rate) || 0).toFixed(2)}</div>
-                          </div>
-                          <div className="col-span-4 space-y-1">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Base Amount</label>
-                            <div className="text-sm font-bold text-slate-700">₹{baseAmount.toFixed(2)}</div>
-                          </div>
+                    {(grnForm.items || []).map((grnItem) => (
+                      <div key={grnItem.id} className="grid grid-cols-12 gap-4 items-end bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                        <div className="col-span-2 space-y-1">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Item Name</label>
+                          <div className="text-sm font-bold text-slate-700">{grnItem.itemName}</div>
                         </div>
-                      );
-                    })}
+                        <div className="col-span-2 space-y-1">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Qty</label>
+                          <input
+                            type="number"
+                            min={0}
+                            className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold bg-white"
+                            value={grnItem.quantity}
+                            onChange={e => updateGrnItem(grnItem.id, 'quantity', Number(e.target.value))}
+                            disabled={!!grnForm.id}
+                          />
+                        </div>
+                        <div className="col-span-2 space-y-1">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Rate (INR)</label>
+                          <div className="text-sm font-bold text-slate-700">₹{(Number(grnItem.rate) || 0).toFixed(2)}</div>
+                        </div>
+                        <div className="col-span-2 space-y-1">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Base Amount</label>
+                          <div className="text-sm font-bold text-slate-700">₹{(Number(grnItem.amount) || 0).toFixed(2)}</div>
+                        </div>
+                        <div className="col-span-3 space-y-1">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Remarks</label>
+                          <input
+                            type="text"
+                            placeholder="Remarks"
+                            className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold bg-white"
+                            value={grnItem.remarks ?? ''}
+                            onChange={e => updateGrnItem(grnItem.id, 'remarks', e.target.value)}
+                            disabled={!!grnForm.id}
+                          />
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
 
@@ -1186,6 +1263,29 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                     <div><span className="text-emerald-400 uppercase">Amount:</span> ₹{(Number(selectedGRN.amount) || 0).toFixed(2)}</div>
                     <div><span className="text-emerald-400 uppercase">Vendor Site:</span> {(masters['Vendor Site'] || []).find(s => s.id === selectedGRN.vendorSiteId)?.name || 'N/A'}</div>
                     <div><span className="text-emerald-400 uppercase">Location:</span> {selectedGRN.location}</div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Invoice No</label>
+                    <input
+                      type="text"
+                      placeholder="Invoice number"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                      value={invoiceForm.invoiceNumber ?? ''}
+                      onChange={e => setInvoiceForm({ ...invoiceForm, invoiceNumber: e.target.value })}
+                      disabled={isInvoiceReadOnly}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Invoice Date</label>
+                    <input
+                      type="date"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                      value={invoiceForm.invoiceDate ?? ''}
+                      onChange={e => setInvoiceForm({ ...invoiceForm, invoiceDate: e.target.value })}
+                      disabled={isInvoiceReadOnly}
+                    />
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -1574,11 +1674,14 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                                 location: Array.from(new Set(rc.items.flatMap(i => getItemCenters(i))))[0] || '',
                                 department: rc.department || '',
                                 subDepartment: rc.subDepartment || '',
+                                invoiceNumber: '',
+                                invoiceDate: '',
                                 remarks: rc.remarks || '',
                                 items: (rc.items || []).map(item => ({
                                   ...item,
-                                  quantity: item.quantity ?? 0,
-                                  amount: (Number(item.rate) || 0) * (Number(item.quantity) || 0)
+                                  quantity: item.quantity ?? 1,
+                                  amount: (Number(item.rate) || 0) * (Number(item.quantity) || 1),
+                                  remarks: item.remarks ?? ''
                                 })),
                                 amount: 0,
                                 attachments: [],
@@ -1683,6 +1786,8 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                                   billingAddressId: grn.billingAddressId || '',
                                   department: grn.department || '',
                                   subDepartment: grn.subDepartment || '',
+                                  invoiceNumber: grn.invoiceNumber ?? '',
+                                  invoiceDate: grn.invoiceDate ?? '',
                                   tds: grn.tds ?? 0,
                                   gst: grn.gst ?? 0,
                                   items: (grn.items || []).map(i => ({ ...i })),

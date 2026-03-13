@@ -990,7 +990,7 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
                               type="text"
                               readOnly
                               className="w-full bg-slate-100 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-600 cursor-not-allowed"
-                              value={item.coaCode ? `${item.coaCode} (from Item master)` : '— Select item for COA mapping'}
+                              value={item.coaCode ? `${item.coaCode}` : 'Select item'}
                               title={item.coaCode ? 'Locked from Masters → Item → COA Mapping' : 'Select an item to see mapped GL code'}
                             />
                           </div>

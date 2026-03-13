@@ -234,6 +234,7 @@ export interface GRN {
   department?: string;
   subDepartment?: string;
   invoiceNumber?: string;
+  invoiceDate?: string;
   items: ItemLine[];
   amount: number;
   remarks: string;
@@ -257,6 +258,8 @@ export interface Invoice {
   location: string;
   department?: string;
   subDepartment?: string;
+  invoiceNumber?: string;
+  invoiceDate?: string;
   items: ItemLine[];
   amount: number;
   status: 'Draft' | 'Pending' | 'Approved' | 'Rejected' | 'Reversed';

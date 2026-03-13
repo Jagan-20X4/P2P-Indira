@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { User, Role, MasterRecord, MasterType, ModuleType } from '../types';
-import { DEPT_SUBDEPT_MAP } from '../constants';
+import { getDepartments, getSubdepartmentsForDepartment, getAllSubdepartments } from '../utils/mastersHelpers';
 import BulkImport from './BulkImport';
 import MultiSelect from './MultiSelect';
 
@@ -34,9 +34,11 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, setUsers, roles,
 
   const getSubdepartmentOptions = () => {
     if (formData.departments.length === 0) {
-      return Object.values(DEPT_SUBDEPT_MAP).flat();
+      return getAllSubdepartments(masters).map((s) => s.name);
     }
-    const options = formData.departments.flatMap((d: string) => DEPT_SUBDEPT_MAP[d] || []);
+    const options = formData.departments.flatMap((d: string) =>
+      getSubdepartmentsForDepartment(masters, d).map((s) => s.name)
+    );
     return Array.from(new Set(options)) as string[];
   };
 
@@ -261,7 +263,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, setUsers, roles,
                 <div className="space-y-1.5">
                   <MultiSelect 
                     label="Department(s)" 
-                    options={masters.Department.map(d => d.name)} 
+                    options={getDepartments(masters).map(d => d.name)} 
                     selected={formData.departments} 
                     onChange={val => setFormData({...formData, departments: val})} 
                     placeholder="Select Multiple Depts..."

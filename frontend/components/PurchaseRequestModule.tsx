@@ -5,7 +5,8 @@ import {
   Attachment, ItemLine, TransactionType, Frequency,
   User, WorkflowRule, Budget, BudgetType, BudgetControlType, ModuleType, ApprovalType
 } from '../types';
-import { DEPARTMENTS, DEPT_SUBDEPT_MAP, CENTERS } from '../constants';
+import { CENTERS } from '../constants';
+import { getDepartments, getSubdepartmentsForDepartment } from '../utils/mastersHelpers';
 import MultiSelect from './MultiSelect';
 import { AlertCircle, Info } from 'lucide-react';
 
@@ -390,7 +391,7 @@ const PurchaseRequestModule: React.FC<PurchaseRequestModuleProps> = ({
                 onChange={e => setPrForm({ ...prForm, department: e.target.value, subDepartment: '' })}
               >
                 <option value="">Select Department</option>
-                {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                {getDepartments(masters).map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
               </select>
             </div>
             <div className="space-y-2">
@@ -402,8 +403,8 @@ const PurchaseRequestModule: React.FC<PurchaseRequestModuleProps> = ({
                 disabled={!prForm.department}
               >
                 <option value="">Select Sub-Department</option>
-                {prForm.department && DEPT_SUBDEPT_MAP[prForm.department as keyof typeof DEPT_SUBDEPT_MAP]?.map(sd => (
-                  <option key={sd} value={sd}>{sd}</option>
+                {getSubdepartmentsForDepartment(masters, prForm.department).map(sd => (
+                  <option key={sd.id} value={sd.name}>{sd.name}</option>
                 ))}
               </select>
             </div>

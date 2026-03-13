@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { MasterRecord, MasterType } from '../types';
 import { COA_CATEGORIES, GST_TYPES, TRANSACTION_TYPES, CENTERS, ENTITIES, MASTER_GROUPS } from '../constants';
+import { getAllSubdepartments } from '../utils/mastersHelpers';
 import MultiSelect from './MultiSelect';
 
 interface MastersManagementProps {
@@ -533,6 +534,47 @@ const MastersManagement: React.FC<MastersManagementProps> = ({ masters, onUpdate
           </div>
         );
 
+      case 'Subdepartment':
+        return (
+          <div className="space-y-4">
+            {commonCode(`${activeSubTab} Code`)}
+            {commonName(`${activeSubTab} Name`)}
+            {commonStatus}
+          </div>
+        );
+
+      case 'Department': {
+        const subdeptRecords = getAllSubdepartments(masters);
+        const subdeptOptions = subdeptRecords.map((s) => s.name);
+        const selectedSubdeptNames = (formData.subdepartmentIds || []).map(
+          (id: string) => subdeptRecords.find((s) => s.id === id)?.name
+        ).filter(Boolean) as string[];
+        return (
+          <div className="space-y-4">
+            {commonCode(`${activeSubTab} Code`)}
+            {commonName(`${activeSubTab} Name`)}
+            {commonStatus}
+            <div className="space-y-2">
+              <label className={labelClass}>Subdepartments under this department</label>
+              <MultiSelect
+                label=""
+                options={subdeptOptions}
+                selected={selectedSubdeptNames}
+                onChange={(names) =>
+                  setFormData({
+                    ...formData,
+                    subdepartmentIds: names
+                      .map((n) => subdeptRecords.find((s) => s.name === n)?.id)
+                      .filter(Boolean),
+                  })
+                }
+                placeholder="Select subdepartments to map..."
+              />
+            </div>
+          </div>
+        );
+      }
+
       default:
         return (
           <div className="space-y-4">
@@ -620,6 +662,10 @@ const MastersManagement: React.FC<MastersManagementProps> = ({ masters, onUpdate
                       integrationInfo = `${record.itemType || 'No Type'} | ${coa ? coa.category : 'No COA'} | ${cat ? cat.name : 'No Cat'} | ${uom ? uom.name : 'No UOM'}`;
                     } else if (activeSubTab === 'TDS' || activeSubTab === 'GST') {
                       integrationInfo = `${record.code} | Rate: ${record.rate}%`;
+                    } else if (activeSubTab === 'Department') {
+                      const subIds = (record as any).subdepartmentIds || [];
+                      const subNames = subIds.map((id: string) => (masters['Subdepartment'] || []).find((s) => s.id === id)?.name).filter(Boolean);
+                      integrationInfo = subNames.length > 0 ? subNames.join(', ') : 'None mapped';
                     }
                     
                     return (

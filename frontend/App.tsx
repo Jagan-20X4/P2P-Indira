@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User, Role, NavigationTab, ModuleType, MasterRecord, MasterType, WorkflowRule, DepartmentLimit, Permission } from './types';
-import { DEPARTMENTS, ALL_MASTER_TYPES } from './constants';
+import { ALL_MASTER_TYPES } from './constants';
+import { getDepartments } from './utils/mastersHelpers';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import UserManagement from './components/UserManagement';
@@ -54,9 +55,7 @@ const App: React.FC = () => {
   const [roles, setRoles] = useState<Role[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [workflows, setWorkflows] = useState<WorkflowRule[]>([]);
-  const [deptLimits] = useState<DepartmentLimit[]>(
-    DEPARTMENTS.map(d => ({ department: d, maxLimit: 1000000, isActive: true }))
-  );
+  const [deptLimits, setDeptLimits] = useState<DepartmentLimit[]>([]);
   const [pendingPOFromPR, setPendingPOFromPR] = useState<PurchaseRequest | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [masters, setMasters] = useState<Record<MasterType, MasterRecord[]>>({});
@@ -140,6 +139,13 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!initialFetchDone.current) return;
     apiPost('masters', masters).catch(console.error);
+  }, [masters]);
+
+  useEffect(() => {
+    const depts = getDepartments(masters);
+    if (depts.length > 0) {
+      setDeptLimits(depts.map((d) => ({ department: d.name, maxLimit: 1000000, isActive: true })));
+    }
   }, [masters]);
 
   const updateMasters = (type: MasterType, records: MasterRecord[]) => {

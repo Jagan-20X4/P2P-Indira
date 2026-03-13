@@ -6,7 +6,8 @@ import {
   Frequency, TransactionType, Attachment, ItemLine,
   User, WorkflowRule, Budget, BudgetControlType, ModuleType, ApprovalType
 } from '../types';
-import { DEPARTMENTS, DEPT_SUBDEPT_MAP, CENTERS } from '../constants';
+import { CENTERS } from '../constants';
+import { getDepartments, getSubdepartmentsForDepartment } from '../utils/mastersHelpers';
 import MultiSelect from './MultiSelect';
 
 interface DirectInvoiceModuleProps {
@@ -530,10 +531,10 @@ const DirectInvoiceModule: React.FC<DirectInvoiceModuleProps> = ({ masters, curr
               <select 
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
                 value={invoiceForm.department}
-                onChange={e => setInvoiceForm({ ...invoiceForm, department: e.target.value })}
+                onChange={e => setInvoiceForm({ ...invoiceForm, department: e.target.value, subDepartment: '' })}
               >
                 <option value="">Select Department</option>
-                {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                {getDepartments(masters).map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
               </select>
             </div>
             <div className="space-y-2">
@@ -544,7 +545,7 @@ const DirectInvoiceModule: React.FC<DirectInvoiceModuleProps> = ({ masters, curr
                 onChange={e => setInvoiceForm({ ...invoiceForm, subDepartment: e.target.value })}
               >
                 <option value="">Select Sub-Department</option>
-                {invoiceForm.department && DEPT_SUBDEPT_MAP[invoiceForm.department]?.map(sd => <option key={sd} value={sd}>{sd}</option>)}
+                {getSubdepartmentsForDepartment(masters, invoiceForm.department).map(sd => <option key={sd.id} value={sd.name}>{sd.name}</option>)}
               </select>
             </div>
             <div className="space-y-4 col-span-2 bg-amber-50 p-6 rounded-3xl border border-amber-100">

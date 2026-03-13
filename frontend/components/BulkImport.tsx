@@ -1,17 +1,19 @@
 
 import React, { useState, useRef } from 'react';
-import { User, Role, WorkflowRule, ApprovalType, ApprovalStep, ModuleType } from '../types';
-import { CENTERS, ENTITIES, DEPARTMENTS, ALL_SUBDEPARTMENTS } from '../constants';
+import { User, Role, WorkflowRule, ApprovalType, ApprovalStep, ModuleType, MasterRecord } from '../types';
+import { CENTERS, ENTITIES } from '../constants';
+import { getAllSubdepartments } from '../utils/mastersHelpers';
 
 interface BulkImportProps {
   type: 'users' | 'workflows';
   roles?: Role[];
   users?: User[];
+  masters?: Record<string, MasterRecord[]>;
   onImport: (data: any[]) => void;
   onClose: () => void;
 }
 
-const BulkImport: React.FC<BulkImportProps> = ({ type, roles, users, onImport, onClose }) => {
+const BulkImport: React.FC<BulkImportProps> = ({ type, roles, users, masters, onImport, onClose }) => {
   const [step, setStep] = useState(1);
   const [file, setFile] = useState<File | null>(null);
   const [errors, setErrors] = useState<{ row: number; msg: string }[]>([]);
@@ -123,7 +125,8 @@ const BulkImport: React.FC<BulkImportProps> = ({ type, roles, users, onImport, o
 
           const max = maxAmt === '-1' || maxAmt.toLowerCase() === 'no limit' || !maxAmt ? null : parseInt(maxAmt);
           
-          if (!ALL_SUBDEPARTMENTS.includes(subDept)) {
+          const validSubdepts = masters ? getAllSubdepartments(masters as Record<string, MasterRecord[]>).map((s) => s.name) : [];
+          if (validSubdepts.length > 0 && !validSubdepts.includes(subDept)) {
             newErrors.push({ row: rowNum, msg: `Subdepartment '${subDept}' not recognized.` });
           }
 

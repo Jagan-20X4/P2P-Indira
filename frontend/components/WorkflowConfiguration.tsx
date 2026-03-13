@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { WorkflowRule, User, ApprovalType, ApprovalStep, MasterRecord, ModuleType } from '../types';
-import { ALL_SUBDEPARTMENTS } from '../constants';
+import { getAllSubdepartments } from '../utils/mastersHelpers';
 import BulkImport from './BulkImport';
 
 interface WorkflowConfigurationProps {
@@ -117,9 +117,17 @@ const RELEVANT_MODULES = [
 const WorkflowConfiguration: React.FC<WorkflowConfigurationProps> = ({ workflows, setWorkflows, users, masters }) => {
   const [selectedEntity, setSelectedEntity] = useState<string>(masters['Entity']?.[0]?.name || '');
   const [selectedModuleType, setSelectedModuleType] = useState<ModuleType>(RELEVANT_MODULES[0]);
-  const [selectedSubDept, setSelectedSubDept] = useState(ALL_SUBDEPARTMENTS[0]);
+  const allSubdeptNames = (getAllSubdepartments(masters as Record<string, MasterRecord[]>)).map((s) => s.name);
+  const [selectedSubDept, setSelectedSubDept] = useState<string>(allSubdeptNames[0] || '');
   const [selectedCenter, setSelectedCenter] = useState<string>('All Centers');
   const [isImportOpen, setIsImportOpen] = useState(false);
+
+  useEffect(() => {
+    const names = (getAllSubdepartments(masters as Record<string, MasterRecord[]>)).map((s) => s.name);
+    if (names.length > 0 && (!selectedSubDept || !names.includes(selectedSubDept))) {
+      setSelectedSubDept(names[0]);
+    }
+  }, [masters, selectedSubDept]);
 
   const activeWorkflows = workflows
     .filter(w => 
@@ -259,7 +267,7 @@ const WorkflowConfiguration: React.FC<WorkflowConfigurationProps> = ({ workflows
               onChange={(e) => setSelectedSubDept(e.target.value)}
               className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all shadow-sm"
             >
-              {ALL_SUBDEPARTMENTS.map(s => <option key={s} value={s}>{s}</option>)}
+              {allSubdeptNames.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
 
@@ -387,6 +395,7 @@ const WorkflowConfiguration: React.FC<WorkflowConfigurationProps> = ({ workflows
         <BulkImport 
           type="workflows" 
           users={users}
+          masters={masters}
           onImport={(data) => {
             setWorkflows(prev => {
               let updated = [...prev];

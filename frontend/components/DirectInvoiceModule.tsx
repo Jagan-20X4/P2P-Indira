@@ -3,11 +3,11 @@ import React, { useState, useEffect } from 'react';
 import Papa from 'papaparse';
 import { 
   Invoice, MasterRecord, MasterType, 
-  Frequency, TransactionType, Attachment, ItemLine,
+  Frequency, Attachment, ItemLine,
   User, WorkflowRule, Budget, BudgetControlType, ModuleType, ApprovalType
 } from '../types';
 import { CENTERS } from '../constants';
-import { getDepartments, getSubdepartmentsForDepartment } from '../utils/mastersHelpers';
+import { getDepartments, getSubdepartmentsForDepartment, getItemTypesFromMasters } from '../utils/mastersHelpers';
 import MultiSelect from './MultiSelect';
 
 interface DirectInvoiceModuleProps {
@@ -27,7 +27,7 @@ const DirectInvoiceModule: React.FC<DirectInvoiceModuleProps> = ({ masters, curr
     entityName: masters.Entity?.[0]?.name || '',
     vendorId: '',
     vendorSiteId: '',
-    transactionType: 'Material',
+    transactionType: getItemTypesFromMasters(masters)[0]?.name ?? '',
     invoiceDate: new Date().toISOString().split('T')[0],
     invoiceNumber: '',
     department: '',
@@ -286,7 +286,7 @@ const DirectInvoiceModule: React.FC<DirectInvoiceModuleProps> = ({ masters, curr
       entityName: masters.Entity?.[0]?.name || '',
       vendorId: '',
       vendorSiteId: '',
-      transactionType: 'Material',
+      transactionType: getItemTypesFromMasters(masters)[0]?.name ?? '',
       invoiceDate: new Date().toISOString().split('T')[0],
       invoiceNumber: '',
       department: '',
@@ -515,15 +515,16 @@ const DirectInvoiceModule: React.FC<DirectInvoiceModuleProps> = ({ masters, curr
               />
             </div>
             <div className="space-y-2">
-              <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Transaction Type</label>
+              <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Item type</label>
               <select 
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
                 value={invoiceForm.transactionType}
-                onChange={e => setInvoiceForm({ ...invoiceForm, transactionType: e.target.value as TransactionType })}
+                onChange={e => setInvoiceForm({ ...invoiceForm, transactionType: e.target.value })}
               >
-                <option value="Material">Material</option>
-                <option value="Service">Service</option>
-                <option value="Asset">Asset</option>
+                <option value="">Select Item type...</option>
+                {getItemTypesFromMasters(masters).map(r => (
+                  <option key={r.id} value={r.name}>{r.name}</option>
+                ))}
               </select>
             </div>
             <div className="space-y-2">

@@ -436,6 +436,15 @@ const MastersManagement: React.FC<MastersManagementProps> = ({ masters, onUpdate
           </div>
         );
 
+      case 'Item Type':
+        return (
+          <div className="space-y-4">
+            {commonCode('Item Type Code')}
+            {commonName('Item Type Name')}
+            {commonStatus}
+          </div>
+        );
+
       case 'Item':
         return (
           <div className="space-y-4">
@@ -450,8 +459,9 @@ const MastersManagement: React.FC<MastersManagementProps> = ({ masters, onUpdate
                   className={inputClass}
                 >
                   <option value="">Select Type...</option>
-                  <option value="CAPEX">CAPEX</option>
-                  <option value="OPEX">OPEX</option>
+                  {(masters['Item Type'] || []).filter((r: any) => r.status !== 'Inactive').map((r: any) => (
+                    <option key={r.id} value={r.name}>{r.name}</option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -655,6 +665,8 @@ const MastersManagement: React.FC<MastersManagementProps> = ({ masters, onUpdate
                     } else if (activeSubTab === 'Vendor Site') {
                       const vendor = (masters['Vendor'] || []).find(v => v.id === record.vendorId);
                       integrationInfo = `Vendor: ${vendor ? vendor.name : 'Unknown'} | Code: ${record.code}`;
+                    } else if (activeSubTab === 'Item Type') {
+                      integrationInfo = record.code || record.name || '—';
                     } else if (activeSubTab === 'Item') {
                       const coa = (masters['COA'] || []).find(c => c.id === record.coaId);
                       const cat = (masters['Item Category'] || []).find(c => c.id === record.itemCategoryId);

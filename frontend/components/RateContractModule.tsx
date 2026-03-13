@@ -3,11 +3,11 @@ import React, { useState, useEffect } from 'react';
 import Papa from 'papaparse';
 import { 
   RateContract, GRN, Invoice, MasterRecord, MasterType, 
-  Frequency, TransactionType, Attachment, ItemLine,
+  Frequency, Attachment, ItemLine,
   User, WorkflowRule, ModuleType, ApprovalType
 } from '../types';
 import { CENTERS } from '../constants';
-import { getDepartments, getSubdepartmentsForDepartment } from '../utils/mastersHelpers';
+import { getDepartments, getSubdepartmentsForDepartment, getItemTypesFromMasters } from '../utils/mastersHelpers';
 import MultiSelect from './MultiSelect';
 
 interface RateContractModuleProps {
@@ -39,7 +39,7 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
     entityName: masters.Entity?.[0]?.name || '',
     vendorId: '',
     vendorSiteId: '',
-    transactionType: 'Material',
+    transactionType: getItemTypesFromMasters(masters)[0]?.name ?? '',
     validFrom: '',
     validTo: '',
     frequency: 'Monthly',
@@ -361,7 +361,7 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
   const resetForms = () => {
     setRcForm({
       entityName: masters.Entity?.[0]?.name || '',
-      vendorId: '', vendorSiteId: '', transactionType: 'Material', validFrom: '', validTo: '',
+      vendorId: '', vendorSiteId: '', transactionType: getItemTypesFromMasters(masters)[0]?.name ?? '', validFrom: '', validTo: '',
       frequency: 'Monthly', department: '', subDepartment: '', paymentTerms: '',
       items: [{ id: Math.random().toString(), itemName: '', quantity: 1, rate: 0, amount: 0, centerName: '', remarks: '' }],
       amount: 0, remarks: '', attachments: [],
@@ -768,16 +768,17 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                   </select>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Transaction Type</label>
+                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Item type</label>
                   <select 
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
                     value={rcForm.transactionType}
-                    onChange={e => setRcForm({ ...rcForm, transactionType: e.target.value as TransactionType })}
+                    onChange={e => setRcForm({ ...rcForm, transactionType: e.target.value })}
                     disabled={isRcReadOnly}
                   >
-                    <option value="Material">Material</option>
-                    <option value="Service">Service</option>
-                    <option value="Asset">Asset</option>
+                    <option value="">Select Item type...</option>
+                    {getItemTypesFromMasters(masters).map(r => (
+                      <option key={r.id} value={r.name}>{r.name}</option>
+                    ))}
                   </select>
                 </div>
                 <div className="space-y-2">

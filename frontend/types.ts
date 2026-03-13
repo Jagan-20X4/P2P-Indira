@@ -49,7 +49,7 @@ export interface MasterRecord {
 export type NavigationTab = 'dashboard' | 'users' | 'roles' | 'workflows' | 'masters' | 'purchase_request' | 'rate_contract' | 'purchase_order' | 'direct_invoice' | 'budgets';
 
 export type MasterType = 
-  | 'Vendor' | 'Vendor Site' | 'Item' | 'Department' | 'Subdepartment' 
+  | 'Vendor' | 'Vendor Site' | 'Item' | 'Item Type' | 'Department' | 'Subdepartment' 
   | 'COA' | 'TDS' | 'GST' | 'Cost Center'
   | 'Country' | 'Zone' | 'State' | 'City'
   | 'Payment Terms' | 'Terms & Conditions' | 'Center' | 'Entity' | 'Voucher'
@@ -138,7 +138,7 @@ export interface PurchaseRequest {
   entityName: string;
   vendorId?: string;
   vendorSiteId?: string;
-  transactionType: TransactionType;
+  transactionType: string;
   validFrom: string;
   validTo: string;
   frequency: Frequency;
@@ -168,7 +168,7 @@ export interface RateContract {
   entityName: string;
   vendorId: string;
   vendorSiteId?: string;
-  transactionType: TransactionType;
+  transactionType: string;
   validFrom: string;
   validTo: string;
   frequency: Frequency;
@@ -194,7 +194,7 @@ export interface PurchaseOrder {
   entityName: string;
   vendorId: string;
   vendorSiteId?: string;
-  transactionType: TransactionType;
+  transactionType: string;
   validFrom: string;
   validTo: string;
   frequency: Frequency;

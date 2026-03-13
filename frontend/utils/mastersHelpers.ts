@@ -23,3 +23,9 @@ export function getAllSubdepartments(masters: MastersByType): MasterRecord[] {
   const list = masters['Subdepartment'] || [];
   return list.filter((s) => s.status === 'Active');
 }
+
+/** Item types from Masters Control → Item Type (e.g. CAPEX, OPEX). Used in PR, PO, RC, Direct Invoice. */
+export function getItemTypesFromMasters(masters: MastersByType): MasterRecord[] {
+  const list = masters['Item Type'] || [];
+  return list.filter((r) => r.status !== 'Inactive');
+}

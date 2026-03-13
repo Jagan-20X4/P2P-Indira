@@ -4,7 +4,7 @@ export const ENTITIES = ['Alpha Corp', 'Beta Logistics', 'Gamma Industries', 'De
 
 /** Master sub-module groups used in Masters Control and Role Config. Single source of truth. */
 export const MASTER_GROUPS: { label: string; types: MasterType[] }[] = [
-  { label: 'Purchasing', types: ['Vendor', 'Vendor Site', 'Vendor Category', 'Applicant Type', 'Item', 'Item Category', 'UOM', 'Payment Terms'] },
+  { label: 'Purchasing', types: ['Vendor', 'Vendor Site', 'Vendor Category', 'Applicant Type', 'Item', 'Item Type', 'Item Category', 'UOM', 'Payment Terms'] },
   { label: 'Organization', types: ['Department', 'Subdepartment', 'Cost Center', 'Entity', 'Center'] },
   { label: 'Finance & Tax', types: ['COA', 'TDS', 'GST', 'Voucher'] },
   { label: 'Geography', types: ['Country', 'Zone', 'State', 'City'] },

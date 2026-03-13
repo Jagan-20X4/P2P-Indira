@@ -601,6 +601,8 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
   const isRcReadOnly = !!rcForm.id && !(rcForm.status === 'Rejected' && rcForm.createdBy === currentUser.id);
   const isGrnReadOnly = !!grnForm.id && !(grnForm.status === 'Rejected' && grnForm.createdBy === currentUser.id);
   const isInvoiceReadOnly = !!invoiceForm.id && !(invoiceForm.status === 'Rejected' && invoiceForm.createdBy === currentUser.id);
+  const isInvoiceCreatingFromGRN = !!selectedGRN && !invoiceForm.id;
+  const invoiceFieldsLocked = isInvoiceReadOnly || isInvoiceCreatingFromGRN;
   const isApprovedRcView = !!(rcForm.id && rcForm.status === 'Approved');
   const rcGrns = grns.filter(g => g.rateContractId);
   const rcInvoices = invoices.filter(inv => {
@@ -1026,7 +1028,8 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                     <div className="text-xs"><span className="text-indigo-400 uppercase font-black">Centers:</span> {Array.from(new Set(selectedRC.items.flatMap(i => getItemCenters(i)))).join(', ')}</div>
                   </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Row 1: Invoice No | Invoice Date */}
                   <div className="space-y-2">
                     <label className="text-sm font-black text-slate-600 uppercase tracking-wider">Invoice No</label>
                     <input
@@ -1048,63 +1051,63 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                       disabled={!!grnForm.id}
                     />
                   </div>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Vendor Site</label>
-                  <select 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
-                    value={grnForm.vendorSiteId}
-                    onChange={e => setGrnForm({ ...grnForm, vendorSiteId: e.target.value })}
-                    disabled={isGrnReadOnly || selectedRC?.status === 'Approved'}
-                  >
-                    <option value="">Select Vendor Site</option>
-                    {(masters['Vendor Site'] || []).filter(s => s.vendorId === selectedRC.vendorId).map(s => (
-                      <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Shipping Address</label>
-                  <select 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
-                    value={grnForm.shippingAddressId}
-                    onChange={e => setGrnForm({ ...grnForm, shippingAddressId: e.target.value })}
-                    disabled={isGrnReadOnly}
-                  >
-                    <option value="">Select Shipping Address</option>
-                    {(masters['Entity'] || []).flatMap(ent => ent.shippingAddresses || []).map((addr: any) => (
-                      <option key={addr.id} value={addr.id}>{addr.address}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Billing Address</label>
-                  <select 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
-                    value={grnForm.billingAddressId}
-                    onChange={e => setGrnForm({ ...grnForm, billingAddressId: e.target.value })}
-                    disabled={isGrnReadOnly}
-                  >
-                    <option value="">Select Billing Address</option>
-                    {(masters['Entity'] || []).flatMap(ent => ent.billingAddresses || []).map((addr: any) => (
-                      <option key={addr.id} value={addr.id}>{addr.address}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Location</label>
-                  <select 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
-                    value={grnForm.location}
-                    onChange={e => setGrnForm({ ...grnForm, location: e.target.value })}
-                    disabled={isGrnReadOnly}
-                  >
-                    <option value="">Select Location</option>
-                    {Array.from(new Set(selectedRC.items.flatMap(i => getItemCenters(i)))).map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Row 2: Vendor Site | Location */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Vendor Site</label>
+                    <select 
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                      value={grnForm.vendorSiteId}
+                      onChange={e => setGrnForm({ ...grnForm, vendorSiteId: e.target.value })}
+                      disabled={isGrnReadOnly || selectedRC?.status === 'Approved'}
+                    >
+                      <option value="">Select Vendor Site</option>
+                      {(masters['Vendor Site'] || []).filter(s => s.vendorId === selectedRC.vendorId).map(s => (
+                        <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Location</label>
+                    <select 
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                      value={grnForm.location}
+                      onChange={e => setGrnForm({ ...grnForm, location: e.target.value })}
+                      disabled={isGrnReadOnly}
+                    >
+                      <option value="">Select Location</option>
+                      {Array.from(new Set(selectedRC.items.flatMap(i => getItemCenters(i)))).map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  {/* Row 3: Shipping Address | Billing Address */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Shipping Address</label>
+                    <select 
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                      value={grnForm.shippingAddressId}
+                      onChange={e => setGrnForm({ ...grnForm, shippingAddressId: e.target.value })}
+                      disabled={isGrnReadOnly}
+                    >
+                      <option value="">Select Shipping Address</option>
+                      {(masters['Entity'] || []).flatMap(ent => ent.shippingAddresses || []).map((addr: any) => (
+                        <option key={addr.id} value={addr.id}>{addr.address}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Billing Address</label>
+                    <select 
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                      value={grnForm.billingAddressId}
+                      onChange={e => setGrnForm({ ...grnForm, billingAddressId: e.target.value })}
+                      disabled={isGrnReadOnly}
+                    >
+                      <option value="">Select Billing Address</option>
+                      {(masters['Entity'] || []).flatMap(ent => ent.billingAddresses || []).map((addr: any) => (
+                        <option key={addr.id} value={addr.id}>{addr.address}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {/* Row 4: Department | Subdepartment */}
                   <div className="space-y-2">
                     <label className="text-sm font-black text-slate-600 uppercase tracking-wider">Department</label>
                     <div className="w-full min-h-[56px] bg-slate-50 border border-slate-200 rounded-xl px-4 py-4 text-base font-bold text-slate-700">
@@ -1117,34 +1120,32 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                       {grnForm.subDepartment || '—'}
                     </div>
                   </div>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">TDS</label>
-                  <select 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
-                    value={grnForm.tds}
-                    onChange={e => setGrnForm({ ...grnForm, tds: Number(e.target.value) })}
-                    disabled={isGrnReadOnly}
-                  >
-                    <option value="0">Select TDS</option>
-                    {(masters['TDS'] || []).map(t => <option key={t.id} value={t.rate}>{t.name}</option>)}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">GST</label>
-                  <select 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
-                    value={grnForm.gst}
-                    onChange={e => setGrnForm({ ...grnForm, gst: Number(e.target.value) })}
-                    disabled={isGrnReadOnly}
-                  >
-                    <option value="0">Select GST</option>
-                    {(masters['GST'] || []).map(g => <option key={g.id} value={g.rate}>{g.name}</option>)}
-                  </select>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Row 5: TDS | GST */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-slate-500 uppercase tracking-wider">TDS</label>
+                    <select 
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                      value={grnForm.tds}
+                      onChange={e => setGrnForm({ ...grnForm, tds: Number(e.target.value) })}
+                      disabled={isGrnReadOnly}
+                    >
+                      <option value="0">Select TDS</option>
+                      {(masters['TDS'] || []).map(t => <option key={t.id} value={t.rate}>{t.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-slate-500 uppercase tracking-wider">GST</label>
+                    <select 
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                      value={grnForm.gst}
+                      onChange={e => setGrnForm({ ...grnForm, gst: Number(e.target.value) })}
+                      disabled={isGrnReadOnly}
+                    >
+                      <option value="0">Select GST</option>
+                      {(masters['GST'] || []).map(g => <option key={g.id} value={g.rate}>{g.name}</option>)}
+                    </select>
+                  </div>
+                  {/* Row 6: Payment Terms | Terms & Conditions */}
                   <div className="space-y-2">
                     <label className="text-sm font-black text-slate-600 uppercase tracking-wider">Payment Terms</label>
                     <div className="w-full min-h-[56px] bg-slate-50 border border-slate-200 rounded-xl px-4 py-4 text-base font-bold text-slate-700">
@@ -1274,7 +1275,7 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
                       value={invoiceForm.invoiceNumber ?? ''}
                       onChange={e => setInvoiceForm({ ...invoiceForm, invoiceNumber: e.target.value })}
-                      disabled={isInvoiceReadOnly}
+                      disabled={invoiceFieldsLocked}
                     />
                   </div>
                   <div className="space-y-2">
@@ -1284,7 +1285,7 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
                       value={invoiceForm.invoiceDate ?? ''}
                       onChange={e => setInvoiceForm({ ...invoiceForm, invoiceDate: e.target.value })}
-                      disabled={isInvoiceReadOnly}
+                      disabled={invoiceFieldsLocked}
                     />
                   </div>
                 </div>
@@ -1294,7 +1295,7 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
                     value={invoiceForm.vendorSiteId}
                     onChange={e => setInvoiceForm({ ...invoiceForm, vendorSiteId: e.target.value })}
-                    disabled={isInvoiceReadOnly}
+                    disabled={invoiceFieldsLocked}
                   >
                     <option value="">Select Vendor Site</option>
                     {(masters['Vendor Site'] || []).filter(s => s.vendorId === selectedRC.vendorId).map(s => (
@@ -1308,7 +1309,7 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
                     value={invoiceForm.shippingAddressId}
                     onChange={e => setInvoiceForm({ ...invoiceForm, shippingAddressId: e.target.value })}
-                    disabled={isInvoiceReadOnly}
+                    disabled={invoiceFieldsLocked}
                   >
                     <option value="">Select Shipping Address</option>
                     {(masters['Entity'] || []).flatMap(ent => ent.shippingAddresses || []).map((addr: any) => (
@@ -1322,7 +1323,7 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
                     value={invoiceForm.billingAddressId}
                     onChange={e => setInvoiceForm({ ...invoiceForm, billingAddressId: e.target.value })}
-                    disabled={isInvoiceReadOnly}
+                    disabled={invoiceFieldsLocked}
                   >
                     <option value="">Select Billing Address</option>
                     {(masters['Entity'] || []).flatMap(ent => ent.billingAddresses || []).map((addr: any) => (
@@ -1336,7 +1337,7 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
                     value={invoiceForm.location}
                     onChange={e => setInvoiceForm({ ...invoiceForm, location: e.target.value })}
-                    disabled={isInvoiceReadOnly}
+                    disabled={invoiceFieldsLocked}
                   >
                     <option value="">Select Location</option>
                     {CENTERS.map(c => <option key={c} value={c}>{c}</option>)}
@@ -1403,7 +1404,7 @@ const RateContractModule: React.FC<RateContractModuleProps> = ({
                               type="number"
                               className={`w-full bg-white border rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 ${invItem.quantity > grnItem.quantity ? 'border-red-500' : 'border-slate-200'}`}
                               value={invItem.quantity}
-                              disabled={isInvoiceReadOnly}
+                              disabled={invoiceFieldsLocked}
                               onChange={e => {
                                 const qty = Number(e.target.value);
                                 if (qty > grnItem.quantity) {

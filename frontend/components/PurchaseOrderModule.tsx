@@ -103,6 +103,11 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
     vendorSiteId: '',
     location: '',
     invoiceNumber: '',
+    invoiceDate: '',
+    department: '',
+    subDepartment: '',
+    tds: 0,
+    gst: 0,
     items: [],
     amount: 0,
     remarks: '',
@@ -110,6 +115,85 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
     shippingAddressId: '',
     billingAddressId: ''
   });
+
+  // Recalculate GRN items when form-level TDS or GST changes (PO Create GRN)
+  useEffect(() => {
+    if (grnForm.id || !selectedPO || selectedGRN || !grnForm.items?.length) return;
+    const vendor = (masters.Vendor ?? []).find((v: any) => v.id === selectedPO.vendorId);
+    const center = (masters.Center ?? []).find((c: any) => c.name === grnForm.location);
+    const isIntraState = vendor && center && (vendor as any).state === (center as any).state;
+    const tdsPercent = grnForm.tds ?? 0;
+    const gstPercent = grnForm.gst ?? 0;
+
+    setGrnForm(prev => {
+      const updatedItems = (prev.items || []).map((item: ItemLine) => {
+        const qty = Number(item.quantity) || 0;
+        const rate = Number(item.rate) || 0;
+        const base = qty * rate;
+        const tdsAmount = base * (tdsPercent / 100);
+        const gstAmount = base * (gstPercent / 100);
+        const totalAmount = base + gstAmount - tdsAmount;
+        const updated: ItemLine = {
+          ...item,
+          amount: base,
+          tds: tdsPercent,
+          gst: gstPercent,
+          tdsAmount,
+          gstAmount,
+          totalAmount
+        };
+        if (isIntraState) {
+          updated.cgst = gstAmount / 2;
+          updated.sgst = gstAmount / 2;
+          updated.igst = 0;
+        } else {
+          updated.cgst = 0;
+          updated.sgst = 0;
+          updated.igst = gstAmount;
+        }
+        return updated;
+      });
+      const amount = updatedItems.reduce((sum, i) => sum + (Number(i.totalAmount) || 0), 0);
+      return { ...prev, items: updatedItems, amount };
+    });
+  }, [grnForm.tds, grnForm.gst, grnForm.location, selectedPO?.id, selectedGRN]);
+
+  const updateGrnItem = (itemId: string, field: 'quantity' | 'remarks', value: number | string) => {
+    if (!selectedPO) return;
+    const vendor = (masters.Vendor ?? []).find((v: any) => v.id === selectedPO.vendorId);
+    const center = (masters.Center ?? []).find((c: any) => c.name === grnForm.location);
+    const isIntraState = vendor && center && (vendor as any).state === (center as any).state;
+    const tdsPercent = grnForm.tds ?? 0;
+    const gstPercent = grnForm.gst ?? 0;
+
+    setGrnForm(prev => {
+      const items = (prev.items || []).map(i => {
+        if (i.id !== itemId) return i;
+        if (field === 'quantity') {
+          const qty = Number(value) || 0;
+          const rate = Number(i.rate) || 0;
+          const base = qty * rate;
+          const tdsAmount = base * (tdsPercent / 100);
+          const gstAmount = base * (gstPercent / 100);
+          const totalAmount = base + gstAmount - tdsAmount;
+          const updated: ItemLine = { ...i, quantity: qty, amount: base, tds: tdsPercent, gst: gstPercent, tdsAmount, gstAmount, totalAmount };
+          if (isIntraState) {
+            updated.cgst = gstAmount / 2;
+            updated.sgst = gstAmount / 2;
+            updated.igst = 0;
+          } else {
+            updated.cgst = 0;
+            updated.sgst = 0;
+            updated.igst = gstAmount;
+          }
+          return updated;
+        }
+        return { ...i, remarks: String(value ?? '') };
+      });
+      const amount = items.reduce((sum, i) => sum + (Number(i.totalAmount) || 0), 0);
+      return { ...prev, items, amount };
+    });
+  };
 
   // Recalculate all items when top-level TDS or GST changes
   useEffect(() => {
@@ -389,6 +473,7 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
       status: 'Pending',
       currentStepIndex: 0,
       createdAt: new Date().toISOString(),
+      createdBy: currentUser.id,
       attachments: grnForm.attachments || []
     };
     setGrns([...grns, newGRN]);
@@ -423,13 +508,14 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
       shippingAddressId: '', billingAddressId: '',
       isUnbudgeted: false, unbudgetedJustification: ''
     });
-    setGrnForm({ vendorSiteId: '', location: '', invoiceNumber: '', items: [], amount: 0, remarks: '', attachments: [], shippingAddressId: '', billingAddressId: '' });
+    setGrnForm({ vendorSiteId: '', location: '', invoiceNumber: '', invoiceDate: '', department: '', subDepartment: '', tds: 0, gst: 0, items: [], amount: 0, remarks: '', attachments: [], shippingAddressId: '', billingAddressId: '' });
     setInvoiceForm({ vendorSiteId: '', location: '', attachments: [], shippingAddressId: '', billingAddressId: '' });
     setSelectedPO(null);
     setSelectedGRN(null);
   };
 
   const poGrns = grns.filter(g => g.purchaseOrderId);
+  const isGrnReadOnly = !!grnForm.id && !(grnForm.status === 'Rejected' && grnForm.createdBy === currentUser.id);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, source: Attachment['source']) => {
     const file = e.target.files?.[0];
@@ -1101,57 +1187,154 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
               </>
             )}
 
-            {/* GRN Form Fields */}
+            {/* GRN Form Fields — same layout as Rate Contract Create GRN */}
             {selectedPO && !selectedGRN && (
               <>
-                <div className="col-span-2 bg-indigo-50 p-6 rounded-2xl border border-indigo-100 mb-4 space-y-4">
-                  <p className="text-sm font-bold text-indigo-900">Auto-populated from {selectedPO.id} (read-only — same as PO at creation)</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-xs">
-                    <div><span className="text-indigo-400 uppercase font-black">Entity:</span> {selectedPO.entityName || (masters.Entity ?? []).find((e: any) => e.name === selectedPO.entityName)?.name}</div>
-                    <div><span className="text-indigo-400 uppercase font-black">Vendor:</span> {(masters.Vendor ?? []).find((v: any) => v.id === selectedPO.vendorId)?.name || '—'}</div>
-                    <div><span className="text-indigo-400 uppercase font-black">Vendor Site:</span> {(masters['Vendor Site'] ?? []).find((s: any) => s.id === selectedPO.vendorSiteId)?.name || 'N/A'}</div>
-                    <div><span className="text-indigo-400 uppercase font-black">Centers:</span> {(selectedPO.centerNames || []).join(', ') || '—'}</div>
-                    <div className="sm:col-span-2"><span className="text-indigo-400 uppercase font-black">Shipping Address:</span> {(() => { const addr = (masters.Entity ?? []).flatMap((ent: any) => (ent.shippingAddresses || []).map((a: any) => ({ ...a }))).find((a: any) => a.id === selectedPO.shippingAddressId); return addr?.address || '—'; })()}</div>
-                    <div className="sm:col-span-2"><span className="text-indigo-400 uppercase font-black">Billing Address:</span> {(() => { const addr = (masters.Entity ?? []).flatMap((ent: any) => (ent.billingAddresses || []).map((a: any) => ({ ...a }))).find((a: any) => a.id === selectedPO.billingAddressId); return addr?.address || '—'; })()}</div>
-                    <div><span className="text-indigo-400 uppercase font-black">Validity From:</span> {selectedPO.validFrom || '—'}</div>
-                    <div><span className="text-indigo-400 uppercase font-black">Validity To:</span> {selectedPO.validTo || '—'}</div>
-                    <div><span className="text-indigo-400 uppercase font-black">Required Date:</span> {selectedPO.requiredDate || '—'}</div>
-                    <div><span className="text-indigo-400 uppercase font-black">Department:</span> {selectedPO.department || '—'}</div>
-                    <div><span className="text-indigo-400 uppercase font-black">Sub-Department:</span> {selectedPO.subDepartment || '—'}</div>
-                    <div><span className="text-indigo-400 uppercase font-black">Payment Terms:</span> {selectedPO.paymentTerms || '—'}</div>
-                    <div><span className="text-indigo-400 uppercase font-black">Terms & Conditions:</span> {selectedPO.termsAndConditionsId ? ((masters['Terms & Conditions'] ?? []).find((t: any) => t.id === selectedPO.termsAndConditionsId)?.name) || '—' : '—'}</div>
-                    <div><span className="text-indigo-400 uppercase font-black">TDS %:</span> {selectedPO.tds != null ? selectedPO.tds : '0'}</div>
-                    <div><span className="text-indigo-400 uppercase font-black">GST %:</span> {selectedPO.gst != null ? selectedPO.gst : '0'}</div>
-                    <div><span className="text-indigo-400 uppercase font-black">Transaction Type:</span> {selectedPO.transactionType || '—'}</div>
-                    <div><span className="text-indigo-400 uppercase font-black">Frequency:</span> {selectedPO.frequency || '—'}</div>
-                    <div className="sm:col-span-2"><span className="text-indigo-400 uppercase font-black">Remarks:</span> {selectedPO.remarks || '—'}</div>
+                <div className="col-span-2 bg-indigo-50 p-4 rounded-2xl border border-indigo-100 mb-4">
+                  <p className="text-sm font-bold text-indigo-900">Auto-populated from {selectedPO.id}</p>
+                  <div className="mt-2 space-y-1">
+                    <div className="text-xs"><span className="text-indigo-400 uppercase font-black">Vendor:</span> {(masters['Vendor'] ?? []).find((v: any) => v.id === selectedPO.vendorId)?.name || '—'}</div>
+                    <div className="text-xs"><span className="text-indigo-400 uppercase font-black">Vendor Site:</span> {(masters['Vendor Site'] ?? []).find((s: any) => s.id === selectedPO.vendorSiteId)?.name || 'N/A'}</div>
+                    <div className="text-xs"><span className="text-indigo-400 uppercase font-black">Centers:</span> {(selectedPO.centerNames || []).join(', ') || '—'}</div>
                   </div>
-                  <div className="pt-3 border-t border-indigo-200/60">
-                    <div className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-1">Tax & Amount Summary (from PO)</div>
-                    <div className="flex flex-wrap gap-4 text-xs font-bold text-slate-700">
-                      <span>Base: ₹{(selectedPO.items || []).reduce((s, i) => s + (i.amount || 0), 0).toFixed(2)}</span>
-                      <span className="text-red-500">TDS: -₹{(selectedPO.items || []).reduce((s, i) => s + (i.tdsAmount || 0), 0).toFixed(2)}</span>
-                      <span className="text-emerald-600">GST: +₹{(selectedPO.items || []).reduce((s, i) => s + (i.gstAmount || 0), 0).toFixed(2)}</span>
-                      <span className="text-indigo-600">Net: ₹{(Number(selectedPO.amount) || 0).toFixed(2)}</span>
+                </div>
+                <div className="col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Row 1: Invoice No | Invoice Date */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-black text-slate-600 uppercase tracking-wider">Invoice No</label>
+                    <input
+                      type="text"
+                      placeholder="Enter invoice number"
+                      className="w-full min-h-[56px] bg-white border border-slate-200 rounded-xl px-4 py-4 text-base font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-50"
+                      value={grnForm.invoiceNumber ?? ''}
+                      onChange={e => setGrnForm({ ...grnForm, invoiceNumber: e.target.value })}
+                      disabled={!!grnForm.id}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-black text-slate-600 uppercase tracking-wider">Invoice Date</label>
+                    <input
+                      type="date"
+                      className="w-full min-h-[56px] bg-white border border-slate-200 rounded-xl px-4 py-4 text-base font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-50"
+                      value={grnForm.invoiceDate ?? ''}
+                      onChange={e => setGrnForm({ ...grnForm, invoiceDate: e.target.value })}
+                      disabled={!!grnForm.id}
+                    />
+                  </div>
+                  {/* Row 2: Vendor Site | Location */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Vendor Site</label>
+                    <select
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                      value={grnForm.vendorSiteId}
+                      onChange={e => setGrnForm({ ...grnForm, vendorSiteId: e.target.value })}
+                      disabled={isGrnReadOnly || selectedPO?.status === 'Approved'}
+                    >
+                      <option value="">Select Vendor Site</option>
+                      {(masters['Vendor Site'] ?? []).filter((s: any) => s.vendorId === selectedPO.vendorId).map((s: any) => (
+                        <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Location</label>
+                    <select
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                      value={grnForm.location}
+                      onChange={e => setGrnForm({ ...grnForm, location: e.target.value })}
+                      disabled={isGrnReadOnly}
+                    >
+                      <option value="">Select Location</option>
+                      {(selectedPO.centerNames || []).map((c: string) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  {/* Row 3: Shipping Address | Billing Address */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Shipping Address</label>
+                    <select
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                      value={grnForm.shippingAddressId}
+                      onChange={e => setGrnForm({ ...grnForm, shippingAddressId: e.target.value })}
+                      disabled={isGrnReadOnly}
+                    >
+                      <option value="">Select Shipping Address</option>
+                      {(masters['Entity'] ?? []).flatMap((ent: any) => ent.shippingAddresses || []).map((addr: any) => (
+                        <option key={addr.id} value={addr.id}>{addr.address}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Billing Address</label>
+                    <select
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                      value={grnForm.billingAddressId}
+                      onChange={e => setGrnForm({ ...grnForm, billingAddressId: e.target.value })}
+                      disabled={isGrnReadOnly}
+                    >
+                      <option value="">Select Billing Address</option>
+                      {(masters['Entity'] ?? []).flatMap((ent: any) => ent.billingAddresses || []).map((addr: any) => (
+                        <option key={addr.id} value={addr.id}>{addr.address}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {/* Row 4: Department | Subdepartment (read-only) */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-black text-slate-600 uppercase tracking-wider">Department</label>
+                    <div className="w-full min-h-[56px] bg-slate-50 border border-slate-200 rounded-xl px-4 py-4 text-base font-bold text-slate-700">
+                      {grnForm.department || '—'}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-black text-slate-600 uppercase tracking-wider">Subdepartment</label>
+                    <div className="w-full min-h-[56px] bg-slate-50 border border-slate-200 rounded-xl px-4 py-4 text-base font-bold text-slate-700">
+                      {grnForm.subDepartment || '—'}
+                    </div>
+                  </div>
+                  {/* Row 5: TDS | GST */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-slate-500 uppercase tracking-wider">TDS</label>
+                    <select
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                      value={grnForm.tds}
+                      onChange={e => setGrnForm({ ...grnForm, tds: Number(e.target.value) })}
+                      disabled={isGrnReadOnly}
+                    >
+                      <option value="0">Select TDS</option>
+                      {(masters['TDS'] || []).map((t: any) => <option key={t.id} value={t.rate}>{t.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-slate-500 uppercase tracking-wider">GST</label>
+                    <select
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium disabled:opacity-50"
+                      value={grnForm.gst}
+                      onChange={e => setGrnForm({ ...grnForm, gst: Number(e.target.value) })}
+                      disabled={isGrnReadOnly}
+                    >
+                      <option value="0">Select GST</option>
+                      {(masters['GST'] || []).map((g: any) => <option key={g.id} value={g.rate}>{g.name}</option>)}
+                    </select>
+                  </div>
+                  {/* Row 6: Payment Terms | Terms & Conditions (read-only) */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-black text-slate-600 uppercase tracking-wider">Payment Terms</label>
+                    <div className="w-full min-h-[56px] bg-slate-50 border border-slate-200 rounded-xl px-4 py-4 text-base font-bold text-slate-700">
+                      {selectedPO?.paymentTerms || '—'}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-black text-slate-600 uppercase tracking-wider">Terms & Conditions</label>
+                    <div className="w-full min-h-[56px] bg-slate-50 border border-slate-200 rounded-xl px-4 py-4 text-base font-bold text-slate-700">
+                      {(masters['Terms & Conditions'] ?? []).find((t: any) => t.id === selectedPO?.termsAndConditionsId)?.name || selectedPO?.termsAndConditionsId || '—'}
                     </div>
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Invoice Number</label>
-                  <input 
-                    type="text" 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
-                    value={grnForm.invoiceNumber}
-                    onChange={e => setGrnForm({ ...grnForm, invoiceNumber: e.target.value })}
-                    placeholder="Enter vendor invoice number"
-                  />
-                </div>
-                
+
                 <div className="col-span-2 space-y-4 mt-4">
                   <div className="flex justify-between items-center">
                     <h4 className="text-sm font-black text-slate-700 uppercase tracking-wider">GRN Items</h4>
                     <div className="flex items-center space-x-4">
-                      <button 
+                      <button
                         onClick={() => downloadTemplate('GRN')}
                         className="text-indigo-600 text-xs font-black hover:underline flex items-center"
                       >
@@ -1166,65 +1349,86 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
                     </div>
                   </div>
                   <div className="space-y-3">
-                    {(selectedPO.items || []).map((poItem) => {
-                      const grnItem = grnForm.items?.find(i => i.id === poItem.id) || { ...poItem, quantity: 0, amount: 0 };
+                    {(grnForm.items || []).map((grnItem) => {
+                      const poItem = selectedPO.items?.find((i: ItemLine) => i.id === grnItem.id);
+                      const maxQty = poItem ? Number(poItem.quantity) || 0 : 0;
                       return (
-                        <div key={poItem.id} className="grid grid-cols-12 gap-4 items-end bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                          <div className="col-span-4">
-                            <label className="text-[10px] font-black text-slate-400 uppercase">Item</label>
-                            <div className="text-sm font-bold text-slate-700">{poItem.itemName}</div>
-                            <div className="text-[10px] text-indigo-500 font-black">PO Rate: ₹{poItem.rate} | TDS: {poItem.tds}% | GST: {poItem.gst}% | PO Qty: {poItem.quantity}</div>
-                            <div className="text-[10px] text-slate-500 italic mt-1 font-bold">PO Remarks: {poItem.remarks}</div>
+                        <div key={grnItem.id} className="grid grid-cols-12 gap-4 items-end bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                          <div className="col-span-2 space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Item Name</label>
+                            <div className="text-sm font-bold text-slate-700">{grnItem.itemName}</div>
                           </div>
-                          <div className="col-span-3 space-y-1">
-                            <label className="text-[10px] font-black text-slate-400 uppercase">Qty Received</label>
-                            <input 
+                          <div className="col-span-2 space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Qty</label>
+                            <input
                               type="number"
-                              className={`w-full bg-white border rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 ${grnItem.quantity > poItem.quantity ? 'border-red-500' : 'border-slate-200'}`}
+                              min={0}
+                              className={`w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold bg-white disabled:opacity-50 ${(Number(grnItem.quantity) || 0) > maxQty ? 'border-red-500' : ''}`}
                               value={grnItem.quantity}
                               onChange={e => {
                                 const qty = Number(e.target.value);
-                                if (qty > poItem.quantity) {
-                                  alert(`Quantity received (${qty}) cannot be greater than PO quantity (${poItem.quantity})`);
+                                if (maxQty > 0 && qty > maxQty) {
+                                  alert(`Quantity (${qty}) cannot be greater than PO quantity (${maxQty})`);
                                   return;
                                 }
-                                const updatedItems = [...(grnForm.items || [])];
-                                const index = updatedItems.findIndex(i => i.id === poItem.id);
-                                
-                                const base = qty * poItem.rate;
-                                const tdsAmount = base * ((poItem.tds || 0) / 100);
-                                const gstAmount = base * ((poItem.gst || 0) / 100);
-                                const totalAmount = base + gstAmount - tdsAmount;
-                                
-                                const newItem: ItemLine = { 
-                                  ...poItem, 
-                                  quantity: qty, 
-                                  amount: base,
-                                  tdsAmount,
-                                  gstAmount,
-                                  totalAmount
-                                };
-                                if (index > -1) updatedItems[index] = newItem;
-                                else updatedItems.push(newItem);
-                                
-                                const total = updatedItems.reduce((sum, i) => sum + (i.totalAmount || 0), 0);
-                                setGrnForm({ ...grnForm, items: updatedItems, amount: total });
+                                updateGrnItem(grnItem.id, 'quantity', qty);
                               }}
+                              disabled={!!grnForm.id}
                             />
-                            {grnItem.quantity > poItem.quantity && <div className="text-[8px] text-red-500 font-bold uppercase">Exceeds PO Qty</div>}
+                          </div>
+                          <div className="col-span-2 space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Rate (INR)</label>
+                            <div className="text-sm font-bold text-slate-700">₹{(Number(grnItem.rate) || 0).toFixed(2)}</div>
+                          </div>
+                          <div className="col-span-2 space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Base Amount</label>
+                            <div className="text-sm font-bold text-slate-700">₹{(Number(grnItem.amount) || 0).toFixed(2)}</div>
                           </div>
                           <div className="col-span-3 space-y-1">
-                            <label className="text-[10px] font-black text-slate-400 uppercase">Total Amount (INR)</label>
-                            <input 
-                              type="number"
-                              readOnly
-                              className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-indigo-600"
-                              value={grnItem.totalAmount?.toFixed(2)}
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Remarks</label>
+                            <input
+                              type="text"
+                              placeholder="Remarks"
+                              className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold bg-white disabled:opacity-50"
+                              value={grnItem.remarks ?? ''}
+                              onChange={e => updateGrnItem(grnItem.id, 'remarks', e.target.value)}
+                              disabled={!!grnForm.id}
                             />
                           </div>
                         </div>
                       );
                     })}
+                  </div>
+                </div>
+
+                {/* Tax & Amount Summary (INR) - GRN */}
+                <div className="col-span-2 bg-slate-50 p-6 rounded-3xl border border-slate-200 mt-4 space-y-4">
+                  <h4 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] border-b border-slate-200 pb-2">Tax & Amount Summary (INR)</h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Base Amount</label>
+                      <div className="text-sm font-bold text-slate-700">
+                        ₹{(grnForm.items || []).reduce((sum, i) => sum + (Number(i.amount) || 0), 0).toFixed(2)}
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total TDS Amount</label>
+                      <div className="text-sm font-bold text-red-500">
+                        -₹{(grnForm.items || []).reduce((sum, i) => sum + (i.tdsAmount || 0), 0).toFixed(2)}
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total GST Amount</label>
+                      <div className="text-sm font-bold text-emerald-500">
+                        +₹{(grnForm.items || []).reduce((sum, i) => sum + (i.gstAmount || 0), 0).toFixed(2)}
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Net Total Amount</label>
+                      <div className="text-lg font-black text-indigo-700">
+                        ₹{(Number(grnForm.amount) || 0).toFixed(2)}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </>
@@ -1507,7 +1711,19 @@ const PurchaseOrderModule: React.FC<PurchaseOrderModuleProps> = ({
                                   subDepartment: po.subDepartment || '',
                                   remarks: po.remarks || '',
                                   invoiceNumber: '',
-                                  items: (po.items || []).map(item => ({ ...item, quantity: 0, amount: 0 })),
+                                  invoiceDate: '',
+                                  tds: po.tds ?? 0,
+                                  gst: po.gst ?? 0,
+                                  items: (po.items || []).map(item => {
+                                    const qty = item.quantity ?? 1;
+                                    const rate = Number(item.rate) || 0;
+                                    return {
+                                      ...item,
+                                      quantity: qty,
+                                      amount: qty * rate,
+                                      remarks: item.remarks ?? ''
+                                    };
+                                  }),
                                   amount: 0,
                                   attachments: []
                                 });

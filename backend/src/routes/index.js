@@ -178,14 +178,21 @@ router.get('/users', async (req, res) => {
 router.post('/users', async (req, res) => {
   try {
     const body = Array.isArray(req.body) ? req.body : [];
-    const withPassword = body.map((row) => {
-      const { password, confirmPassword, ...rest } = row;
-      const out = { ...rest };
-      if (password != null && String(password).length > 0) {
-        out.passwordHash = password;
-      }
-      return out;
-    });
+    const withPassword = await Promise.all(
+      body.map(async (row) => {
+        const { password, confirmPassword, ...rest } = row;
+        const out = { ...rest };
+        if (password != null && String(password).length > 0) {
+          out.passwordHash = password;
+        } else if (out.id) {
+          const existing = await query('SELECT password_hash FROM users WHERE id = $1', [out.id]);
+          if (existing.rows[0]?.password_hash != null) {
+            out.passwordHash = existing.rows[0].password_hash;
+          }
+        }
+        return out;
+      })
+    );
     await buildUpsert('users', 'id', USERS_COLS, withPassword);
     const rows = await getAll('users');
     res.json(stripPasswordHash(rows));

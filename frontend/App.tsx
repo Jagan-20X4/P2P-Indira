@@ -60,6 +60,13 @@ const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [masters, setMasters] = useState<Record<MasterType, MasterRecord[]>>({});
 
+  const P2P_USER_KEY = 'p2p_user';
+
+  const handleLogout = () => {
+    localStorage.removeItem(P2P_USER_KEY);
+    setCurrentUser(null);
+  };
+
   useEffect(() => {
     (async () => {
       try {
@@ -77,7 +84,8 @@ const App: React.FC = () => {
           apiGet<Record<string, MasterRecord[]>>('masters'),
         ]);
         setRoles(Array.isArray(rolesRes) ? rolesRes : []);
-        setUsers(Array.isArray(usersRes) ? usersRes : []);
+        const usersList = Array.isArray(usersRes) ? usersRes : [];
+        setUsers(usersList);
         setWorkflows(Array.isArray(workflowsRes) ? normalizeWorkflows(workflowsRes) : []);
         setPurchaseRequests(Array.isArray(prRes) ? prRes : []);
         setRateContracts(Array.isArray(rcRes) ? rcRes : []);
@@ -87,6 +95,17 @@ const App: React.FC = () => {
         setBudgets(Array.isArray(budgetsRes) ? budgetsRes : []);
         setBudgetAmendments(Array.isArray(amendRes) ? amendRes : []);
         setMasters(mastersRes && typeof mastersRes === 'object' ? mastersRes as Record<MasterType, MasterRecord[]> : {});
+        const stored = localStorage.getItem(P2P_USER_KEY);
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored);
+            const found = usersList.find((u) => u.id === parsed.id && u.isActive);
+            if (found) setCurrentUser(found);
+            else localStorage.removeItem(P2P_USER_KEY);
+          } catch {
+            localStorage.removeItem(P2P_USER_KEY);
+          }
+        }
         initialFetchDone.current = true;
       } catch (e) {
         setLoadError(e instanceof Error ? e.message : 'Failed to load data');
@@ -311,12 +330,19 @@ const App: React.FC = () => {
   }
 
   if (!currentUser) {
-    return <Login users={users} onLogin={setCurrentUser} />;
+    return (
+      <Login
+        onLogin={(user) => {
+          localStorage.setItem(P2P_USER_KEY, JSON.stringify(user));
+          setCurrentUser(user);
+        }}
+      />
+    );
   }
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50 font-sans text-slate-900">
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} currentUser={currentUser} roles={roles} />
+      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} currentUser={currentUser} roles={roles} onLogout={handleLogout} />
       <main className="flex-1 overflow-y-auto p-8 relative">
         <header className="mb-8 flex justify-between items-center sticky top-0 bg-slate-50/80 backdrop-blur-md z-20 pb-4">
           <div>
@@ -334,7 +360,7 @@ const App: React.FC = () => {
               </div>
             </div>
             <button
-              onClick={() => setCurrentUser(null)}
+              onClick={handleLogout}
               className="p-3 bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-rose-500 hover:border-rose-100 transition-all shadow-sm group"
               title="Logout"
             >

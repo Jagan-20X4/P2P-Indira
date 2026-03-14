@@ -1,11 +1,9 @@
 import { Router } from 'express';
-import { query, rowsToCamel, objToSnake } from '../db.js';
+import jwt from 'jsonwebtoken';
+import { query, rowsToCamel, rowToCamel, objToSnake } from '../db.js';
 
 const router = Router();
-
-router.get('/health', (req, res) => {
-  res.json({ ok: true, message: 'API is up' });
-});
+const JWT_SECRET = process.env.JWT_SECRET || 'p2p-indira-jwt-secret-change-in-production';
 
 // JSON columns that may be stored as TEXT/JSON (not JSONB) and need parsing after retrieval
 const JSON_COLUMNS = {
@@ -59,6 +57,85 @@ function buildUpsert(table, pk, columns, body) {
   );
 }
 
+// --- JWT auth middleware ---
+async function requireAuth(req, res, next) {
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    const result = await query('SELECT * FROM users WHERE id = $1', [payload.userId]);
+    const row = result.rows[0];
+    if (!row || !row.is_active) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const user = rowToCamel(row);
+    const { passwordHash, ...userSafe } = user;
+    const jsonCols = JSON_COLUMNS.users || [];
+    const out = { ...userSafe };
+    for (const col of jsonCols) {
+      if (typeof out[col] === 'string') {
+        try { out[col] = JSON.parse(out[col]); } catch {}
+      }
+    }
+    req.user = out;
+    next();
+  } catch (e) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+}
+
+router.use((req, res, next) => {
+  if (req.path === '/health' && req.method === 'GET') return next();
+  if (req.path === '/login' && req.method === 'POST') return next();
+  requireAuth(req, res, next);
+});
+
+router.get('/health', (req, res) => {
+  res.json({ ok: true, message: 'API is up' });
+});
+
+// --- LOGIN (no auth) ---
+router.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+    if (!email || typeof password !== 'string') {
+      return res.status(401).send('Invalid email or password. Please try again.');
+    }
+    const result = await query(
+      'SELECT * FROM users WHERE LOWER(TRIM(email)) = LOWER(TRIM($1))',
+      [email]
+    );
+    const row = result.rows[0];
+    if (!row || !row.is_active) {
+      return res.status(401).send('Invalid email or password. Please try again.');
+    }
+    const storedPassword = row.password_hash;
+    if (storedPassword !== password) {
+      return res.status(401).send('Password is wrong, please type again.');
+    }
+    const user = rowToCamel(row);
+    const { passwordHash, ...userSafe } = user;
+    const jsonCols = JSON_COLUMNS.users || [];
+    const out = { ...userSafe };
+    for (const col of jsonCols) {
+      if (typeof out[col] === 'string') {
+        try { out[col] = JSON.parse(out[col]); } catch {}
+      }
+    }
+    const token = jwt.sign({ userId: row.id }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token, user: out });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/me', (req, res) => {
+  res.json(req.user);
+});
+
 // --- ROLES ---
 const ROLES_COLS = ['id', 'name', 'is_active', 'permissions', 'allowed_master_types', 'masters_permissions'];
 router.get('/roles', async (req, res) => {
@@ -81,19 +158,37 @@ router.post('/roles', async (req, res) => {
 
 // --- USERS ---
 const USERS_COLS = ['id', 'employee_id', 'name', 'center_names', 'departments', 'sub_departments', 'phone_number', 'email', 'entity_names', 'role_ids', 'is_active', 'password_hash'];
+
+function stripPasswordHash(rows) {
+  return (rows || []).map((row) => {
+    const { passwordHash, ...rest } = row;
+    return rest;
+  });
+}
+
 router.get('/users', async (req, res) => {
   try {
     const rows = await getAll('users');
-    res.json(rows);
+    res.json(stripPasswordHash(rows));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
+
 router.post('/users', async (req, res) => {
   try {
-    await buildUpsert('users', 'id', USERS_COLS, req.body);
+    const body = Array.isArray(req.body) ? req.body : [];
+    const withPassword = body.map((row) => {
+      const { password, confirmPassword, ...rest } = row;
+      const out = { ...rest };
+      if (password != null && String(password).length > 0) {
+        out.passwordHash = password;
+      }
+      return out;
+    });
+    await buildUpsert('users', 'id', USERS_COLS, withPassword);
     const rows = await getAll('users');
-    res.json(rows);
+    res.json(stripPasswordHash(rows));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

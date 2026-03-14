@@ -1,27 +1,25 @@
-
 import React, { useState } from 'react';
 import { User } from '../types';
+import { apiPost, setToken } from '../api';
 
 interface LoginProps {
-  users: User[];
   onLogin: (user: User) => void;
 }
 
-const Login: React.FC<LoginProps> = ({ users, onLogin }) => {
+const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const user = users.find(u => u.email === email);
-    
-    // In a real app, we would verify the password here.
-    // For this demo, we'll just check if the user exists.
-    if (user && user.isActive) {
-      onLogin(user);
-    } else {
-      setError('Invalid email or account is inactive.');
+    setError('');
+    try {
+      const data = await apiPost<{ token: string; user: User }>('login', { email, password });
+      setToken(data.token);
+      onLogin(data.user);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Password is wrong, please type again.');
     }
   };
 

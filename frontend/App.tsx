@@ -15,7 +15,7 @@ import DirectInvoiceModule from './components/DirectInvoiceModule';
 import BudgetModule from './components/BudgetModule';
 import Login from './components/Login';
 import { PurchaseRequest, PurchaseOrder, GRN, Invoice, RateContract, Budget, BudgetAmendment, BudgetType, BudgetControlType, BudgetValidity, ApprovalType } from './types';
-import { apiGet, apiPost } from './api';
+import { apiGet, apiPost, clearToken } from './api';
 
 /** Normalize workflows from API so approval steps always have type (Reviewer/Approver) and userIds for correct UI behavior. */
 function normalizeWorkflows(rules: WorkflowRule[]): WorkflowRule[] {
@@ -60,60 +60,68 @@ const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [masters, setMasters] = useState<Record<MasterType, MasterRecord[]>>({});
 
-  const P2P_USER_KEY = 'p2p_user';
-
   const handleLogout = () => {
-    localStorage.removeItem(P2P_USER_KEY);
+    clearToken();
     setCurrentUser(null);
   };
 
+  const loadData = async () => {
+    try {
+      const [rolesRes, usersRes, workflowsRes, prRes, rcRes, poRes, grnsRes, invRes, budgetsRes, amendRes, mastersRes] = await Promise.all([
+        apiGet<Role[]>('roles'),
+        apiGet<User[]>('users'),
+        apiGet<WorkflowRule[]>('workflows'),
+        apiGet<PurchaseRequest[]>('purchase-requests'),
+        apiGet<RateContract[]>('rate-contracts'),
+        apiGet<PurchaseOrder[]>('purchase-orders'),
+        apiGet<GRN[]>('grns'),
+        apiGet<Invoice[]>('invoices'),
+        apiGet<Budget[]>('budgets'),
+        apiGet<BudgetAmendment[]>('budget-amendments'),
+        apiGet<Record<string, MasterRecord[]>>('masters'),
+      ]);
+      setRoles(Array.isArray(rolesRes) ? rolesRes : []);
+      setUsers(Array.isArray(usersRes) ? usersRes : []);
+      setWorkflows(Array.isArray(workflowsRes) ? normalizeWorkflows(workflowsRes) : []);
+      setPurchaseRequests(Array.isArray(prRes) ? prRes : []);
+      setRateContracts(Array.isArray(rcRes) ? rcRes : []);
+      setPurchaseOrders(Array.isArray(poRes) ? poRes : []);
+      setGrns(Array.isArray(grnsRes) ? grnsRes : []);
+      setInvoices(Array.isArray(invRes) ? invRes : []);
+      setBudgets(Array.isArray(budgetsRes) ? budgetsRes : []);
+      setBudgetAmendments(Array.isArray(amendRes) ? amendRes : []);
+      setMasters(mastersRes && typeof mastersRes === 'object' ? mastersRes as Record<MasterType, MasterRecord[]> : {});
+      initialFetchDone.current = true;
+    } catch (e) {
+      clearToken();
+      setLoadError(e instanceof Error ? e.message : 'Failed to load data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
+    const token = localStorage.getItem('p2p_token');
+    if (!token) {
+      setLoading(false);
+      return;
+    }
     (async () => {
       try {
-        const [rolesRes, usersRes, workflowsRes, prRes, rcRes, poRes, grnsRes, invRes, budgetsRes, amendRes, mastersRes] = await Promise.all([
-          apiGet<Role[]>('roles'),
-          apiGet<User[]>('users'),
-          apiGet<WorkflowRule[]>('workflows'),
-          apiGet<PurchaseRequest[]>('purchase-requests'),
-          apiGet<RateContract[]>('rate-contracts'),
-          apiGet<PurchaseOrder[]>('purchase-orders'),
-          apiGet<GRN[]>('grns'),
-          apiGet<Invoice[]>('invoices'),
-          apiGet<Budget[]>('budgets'),
-          apiGet<BudgetAmendment[]>('budget-amendments'),
-          apiGet<Record<string, MasterRecord[]>>('masters'),
-        ]);
-        setRoles(Array.isArray(rolesRes) ? rolesRes : []);
-        const usersList = Array.isArray(usersRes) ? usersRes : [];
-        setUsers(usersList);
-        setWorkflows(Array.isArray(workflowsRes) ? normalizeWorkflows(workflowsRes) : []);
-        setPurchaseRequests(Array.isArray(prRes) ? prRes : []);
-        setRateContracts(Array.isArray(rcRes) ? rcRes : []);
-        setPurchaseOrders(Array.isArray(poRes) ? poRes : []);
-        setGrns(Array.isArray(grnsRes) ? grnsRes : []);
-        setInvoices(Array.isArray(invRes) ? invRes : []);
-        setBudgets(Array.isArray(budgetsRes) ? budgetsRes : []);
-        setBudgetAmendments(Array.isArray(amendRes) ? amendRes : []);
-        setMasters(mastersRes && typeof mastersRes === 'object' ? mastersRes as Record<MasterType, MasterRecord[]> : {});
-        const stored = localStorage.getItem(P2P_USER_KEY);
-        if (stored) {
-          try {
-            const parsed = JSON.parse(stored);
-            const found = usersList.find((u) => u.id === parsed.id && u.isActive);
-            if (found) setCurrentUser(found);
-            else localStorage.removeItem(P2P_USER_KEY);
-          } catch {
-            localStorage.removeItem(P2P_USER_KEY);
-          }
-        }
-        initialFetchDone.current = true;
+        const me = await apiGet<User>('me');
+        setCurrentUser(me);
+        await loadData();
       } catch (e) {
-        setLoadError(e instanceof Error ? e.message : 'Failed to load data');
-      } finally {
+        clearToken();
         setLoading(false);
       }
     })();
   }, []);
+
+  useEffect(() => {
+    if (!currentUser || initialFetchDone.current) return;
+    loadData();
+  }, [currentUser]);
 
   useEffect(() => {
     if (!initialFetchDone.current) return;
@@ -330,14 +338,7 @@ const App: React.FC = () => {
   }
 
   if (!currentUser) {
-    return (
-      <Login
-        onLogin={(user) => {
-          localStorage.setItem(P2P_USER_KEY, JSON.stringify(user));
-          setCurrentUser(user);
-        }}
-      />
-    );
+    return <Login onLogin={setCurrentUser} />;
   }
 
   return (
